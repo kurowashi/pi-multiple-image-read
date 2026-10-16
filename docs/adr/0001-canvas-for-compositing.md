@@ -47,6 +47,6 @@ Pi の拡張 API には、タイルを合成する公開 API も文字を描く�
 
 - 依存の許可リストは `test/contract/dependencies.test.ts` の `ALLOWED_RUNTIME_DEPENDENCIES` に1件だけあります。別の実行時依存を足すには、この ADR を更新してからにします。
 - `src` が使える Node builtin は `node:fs` / `node:os` / `node:path` だけです（ファイルの読み取り、ホームディレクトリの展開、パスの解決）。
-- TIFF は canvas が復号できないため対象外です。`.tif` / `.tiff` を明示指定すると「unsupported image type」で失敗します。ディレクトリと glob では、画像の拡張子でないファイルを黙って除外します（`src/files.ts`、`test/unit/files.test.ts`）。
+- TIFF は canvas が復号できないため対象外です。`.tif` / `.tiff` を明示指定すると「unsupported image type」で失敗します。ディレクトリと glob では、画像でないファイル（テキストなど）は黙って除外し、TIFF は `skipped` として返答に列挙します（`src/files.ts`、`test/unit/files.test.ts`）。
 - Linux x64 で canvas のネイティブバイナリを読み込めない環境では、拡張の読み込みが失敗します。この場合の代替は未定です。
 - 依存の更新は、描画結果（タイル位置・ラベル・サイズ上限）がテストで変わらないことを確認してから行います。

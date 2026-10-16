@@ -49,9 +49,10 @@ pi install /path/to/pi-multiple-image-read
 ```
 
 - 位置番号は、シートの左から右、上から下の順の通し番号です。
-- `(label cut off)`: ラベルが長すぎて、末尾を `…` で省いた。
+- `(label cut off)`: ラベルが長すぎて、中央を `…` で省いた（先頭と末尾は残す）。
 - `(label not drawn)`: 日本語のラベルを描けなかった（後述）。
 - `(label shared with another file)`: 同じ名前のファイルが別のディレクトリにあり、ラベルで区別できない。
+- `skipped: <path> (<reason>)`: 読めなかった、または対応外の形式のファイル。残りの画像は返ります。
 - 判断の経緯は [docs/adr/0003](docs/adr/0003-text-lists-only-unlabelled-images.md) にあります。
 
 ### タイルの大きさに関する注意
@@ -86,7 +87,8 @@ pi install /path/to/pi-multiple-image-read
 | 存在しない | `not found: /tmp/missing.png` |
 | 明示指定の形式が対応外 | `unsupported image type: /tmp/scan.tiff` |
 | 上限超過 | `60 images matched; the limit is 48 per call. Narrow the paths.` |
-| 復号できない | `cannot read /tmp/broken.png: ...`（1枚でもあれば全体が失敗する） |
+| 復号できない | 返答に `skipped: /tmp/broken.png (cannot decode: ...)` と出て、残りは返る。全件失敗なら `no readable images: ...` |
+| TIFF（ディレクトリ・glob 内） | 返答に `skipped: /tmp/x/scan.tif (unsupported image type)` |
 
 ## 開発
 

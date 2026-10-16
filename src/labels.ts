@@ -31,8 +31,8 @@ export function tileLabels(paths: readonly string[]): string[] {
 }
 
 /**
- * Shrink the font down to MIN_FONT, then truncate with an ellipsis, so a label never spills into a neighbour.
- * Returns null when not even the ellipsis fits.
+ * Shrink the font down to MIN_FONT, then cut the middle out with an ellipsis, keeping the start and the end.
+ * The end is kept because numbered names differ there (`…10.23.45 01`). Returns null when not even the ellipsis fits.
  */
 export function fitLabel(
 	text: string,
@@ -46,9 +46,12 @@ export function fitLabel(
 
 	// Code points, not UTF-16 units, so a surrogate pair is never split.
 	const chars = [...text];
-	while (chars.length > 0 && measure(`${chars.join("")}…`, px) > maxWidth) chars.pop();
-	if (chars.length === 0) return measure("…", px) <= maxWidth ? { text: "…", px, truncated: true } : null;
-	return { text: `${chars.join("")}…`, px, truncated: true };
+	for (let keep = chars.length - 1; keep >= 0; keep--) {
+		const head = Math.ceil(keep / 2);
+		const candidate = `${chars.slice(0, head).join("")}…${chars.slice(chars.length - (keep - head)).join("")}`;
+		if (measure(candidate, px) <= maxWidth) return { text: candidate, px, truncated: true };
+	}
+	return null;
 }
 
 /**

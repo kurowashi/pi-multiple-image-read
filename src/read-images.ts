@@ -4,7 +4,7 @@
 
 import { readFileSync } from "node:fs";
 import { type Image, loadImage } from "@napi-rs/canvas";
-import { expandInputs } from "./files.ts";
+import { expandInputs, type Skipped } from "./files.ts";
 import { findCjkFamily } from "./font.ts";
 import { tileLabels } from "./labels.ts";
 import { MIN_TILE, PER_SHEET } from "./layout.ts";
@@ -21,71 +21,116 @@ export type ContentBlock =
 	| { type: "image"; data: string; mimeType: "image/png" | "image/jpeg" }
 	| { type: "text"; text: string };
 
+/** A position on the sheets, the file behind it, and how its label fared. */
+interface Placed {
+	position: number;
+	path: string;
+	label: LabelState;
+	shared: boolean;
+}
+
 /**
- * Returns one image block per sheet, then a text block only when some image needs a name the label cannot give:
- * the label was cut off or not drawn, or it is shared with another file. Every other image is identified by its label.
+ * Returns one image block per sheet, then a text block only when something needs a line: a label that cannot
+ * identify its image, a file that was skipped, or a file that could not be read. Other images are identified by label.
  */
 export async function readImages(
 	inputs: readonly string[],
 	{ fontFamily = findCjkFamily() }: { fontFamily?: string | null } = {},
 ): Promise<ContentBlock[]> {
-	const paths = expandInputs(inputs);
-	const labels = tileLabels(paths);
-	const labelCount = new Map<string, number>();
-	for (const label of labels) labelCount.set(label, (labelCount.get(label) ?? 0) + 1);
+	const expanded = expandInputs(inputs);
+	const candidates = expanded.paths;
+	// Labels come from every candidate, so a file that later fails to decode does not change another file's label.
+	const labels = tileLabels(candidates);
+	const labelCount = countLabels(labels);
 
 	const sheets: Sheet[] = [];
-	const reports: TileReport[] = [];
-	for (let start = 0; start < paths.length; start += PER_SHEET) {
-		const chunk = paths.slice(start, start + PER_SHEET);
+	const placed: Placed[] = [];
+	const unreadable: Skipped[] = [];
+
+	for (let start = 0; start < candidates.length; start += PER_SHEET) {
+		const chunk = candidates.slice(start, start + PER_SHEET);
 		// Decoded images are held for one sheet at a time, so memory stays bounded by PER_SHEET.
-		const items: SheetItem[] = await Promise.all(
-			chunk.map(async (path, i) => ({ label: labelAt(labels, start + i), image: await decode(path) })),
-		);
+		const decoded = await Promise.all(chunk.map((path) => decodeOrReason(path)));
+		const items: SheetItem[] = [];
+		const members: number[] = [];
+		decoded.forEach((result, i) => {
+			const index = start + i;
+			if (result.ok) {
+				items.push({ label: labelAt(labels, index), image: result.image });
+				members.push(index);
+			} else {
+				unreadable.push({ path: chunk[i] ?? "", reason: result.reason });
+			}
+		});
+		if (items.length === 0) continue;
+
 		const sheet = composeSheet(items, fontFamily);
 		sheets.push(sheet);
+		// Positions follow the reading order on the sheet, which is the order of the items.
 		for (const tile of [...sheet.tiles].sort((x, y) => x.index - y.index)) {
-			reports.push({ ...tile, index: start + tile.index });
+			const index = members[tile.index];
+			if (index === undefined) throw new RangeError(`no member for tile ${tile.index}`);
+			placed.push({
+				position: placed.length + 1,
+				path: candidates[index] ?? "",
+				label: tile.label,
+				shared: (labelCount.get(labelAt(labels, index)) ?? 0) > 1,
+			});
 		}
 	}
 
+	if (sheets.length === 0) {
+		throw new Error(`no readable images: ${unreadable.map((u) => `${u.path} (${u.reason})`).join("; ")}`);
+	}
+
 	const blocks: ContentBlock[] = sheets.map((sheet) => ({ type: "image", data: sheet.data, mimeType: sheet.mimeType }));
-	const text = describe(paths, sheets.length, reports, labelCount, labels, fontFamily);
+	const text = describe({
+		placed,
+		skipped: expanded.skipped,
+		unreadable,
+		sheetCount: sheets.length,
+		tiles: sheets.flatMap((sheet) => sheet.tiles),
+		fontFamily,
+	});
 	if (text.length > 0) blocks.push({ type: "text", text });
 	return blocks;
 }
 
-/** The text block: notes, and a line for each image whose label cannot identify it. Empty when neither applies. */
-function describe(
-	paths: readonly string[],
-	sheetCount: number,
-	reports: readonly TileReport[],
-	labelCount: ReadonlyMap<string, number>,
-	labels: readonly string[],
-	fontFamily: string | null,
-): string {
+interface Description {
+	placed: readonly Placed[];
+	skipped: readonly Skipped[];
+	unreadable: readonly Skipped[];
+	sheetCount: number;
+	tiles: readonly TileReport[];
+	fontFamily: string | null;
+}
+
+/** The text block: notes, and a line for each image whose name the label cannot give. Empty when none applies. */
+function describe(d: Description): string {
 	const notes: string[] = [];
-	if (fontFamily === null && reports.some((tile) => tile.label === "not-drawn")) {
+	if (d.fontFamily === null && d.tiles.some((tile) => tile.label === "not-drawn")) {
 		notes.push("No Japanese-capable font is installed, so labels with non-ASCII characters are left off the sheets.");
 	}
-	if (anyTileTooSmall(reports)) {
+	if (anyTileTooSmall(d.tiles)) {
 		notes.push(
 			`Some tiles are under ${MIN_TILE} px; the images may be hard to read. Open the full-size file for fine detail.`,
 		);
 	}
-	const listed = reports.flatMap((tile) => {
-		const shared = (labelCount.get(labelAt(labels, tile.index)) ?? 0) > 1;
-		if (tile.label === "drawn" && !shared) return [];
-		return [`  ${tile.index + 1}. ${paths[tile.index]}${annotate(tile.label, shared)}`];
-	});
-	const parts =
-		listed.length > 0
-			? [
-					`${paths.length} image(s) on ${sheetCount} sheet(s); positions run in input order, left to right, top to bottom. Listed: labels cut off, not drawn, or shared.`,
-					...listed,
-				]
-			: [];
-	return [...notes, ...parts].join("\n");
+	const listed = d.placed
+		.filter((p) => p.label !== "drawn" || p.shared)
+		.map((p) => `  ${p.position}. ${p.path}${annotate(p.label, p.shared)}`);
+	for (const skip of d.skipped) listed.push(`  skipped: ${skip.path} (${skip.reason})`);
+	for (const bad of d.unreadable) listed.push(`  skipped: ${bad.path} (${bad.reason})`);
+
+	if (listed.length === 0) return notes.join("\n");
+	const summary = `${d.placed.length} image(s) on ${d.sheetCount} sheet(s); positions run in input order, left to right, top to bottom.`;
+	return [...notes, summary, ...listed].join("\n");
+}
+
+function countLabels(labels: readonly string[]): Map<string, number> {
+	const counts = new Map<string, number>();
+	for (const label of labels) counts.set(label, (counts.get(label) ?? 0) + 1);
+	return counts;
 }
 
 function annotate(label: LabelState, shared: boolean): string {
@@ -100,12 +145,13 @@ function labelAt(labels: readonly string[], i: number): string {
 	return label;
 }
 
-/** Any decode failure fails the whole call, so no sheet can show a label for the wrong image. */
-async function decode(path: string): Promise<Image> {
+type Decoded = { ok: true; image: Image } | { ok: false; reason: string };
+
+/** A file that cannot be decoded is reported and left off the sheets; the rest of the call goes ahead. */
+async function decodeOrReason(path: string): Promise<Decoded> {
 	try {
-		return await loadImage(readFileSync(path));
+		return { ok: true, image: await loadImage(readFileSync(path)) };
 	} catch (error) {
-		const reason = error instanceof Error ? error.message : String(error);
-		throw new Error(`cannot read ${path}: ${reason}`);
+		return { ok: false, reason: `cannot decode: ${error instanceof Error ? error.message : String(error)}` };
 	}
 }

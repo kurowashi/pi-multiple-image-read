@@ -35,7 +35,7 @@ test("a label that cannot fit even at the minimum size is truncated with an elli
 	assert.ok(fitted);
 	assert.equal(fitted.truncated, true);
 	assert.equal(fitted.px, MIN_FONT);
-	assert.ok(fitted.text.endsWith("…"));
+	assert.ok(fitted.text.includes("…"));
 	assert.ok(measure(fitted.text, MIN_FONT) <= 80);
 });
 
@@ -45,8 +45,16 @@ test("truncation counts code points, so Japanese is never split mid-character", 
 	assert.ok(fitted);
 	assert.equal(fitted.truncated, true);
 	assert.ok(fitted.text.isWellFormed(), "no lone surrogates");
-	const kept = Array.from(fitted.text).slice(0, -1).join("");
-	assert.ok(original.startsWith(kept), "the kept text is a prefix of the original, cut on character boundaries");
+	const [head, tail] = fitted.text.split("…");
+	assert.ok(original.startsWith(head ?? ""), "the head is a prefix of the original, cut on character boundaries");
+	assert.ok(original.endsWith(tail ?? ""), "the tail is a suffix of the original, cut on character boundaries");
+});
+
+test("truncation keeps the end, so numbered names stay distinguishable", () => {
+	const fitted = fitLabel("スクリーンショット_2025-03-14_10.23.45_01", 120, 20, measure);
+	assert.ok(fitted);
+	assert.equal(fitted.truncated, true);
+	assert.ok(fitted.text.endsWith("01"), `expected the end to survive, got ${fitted.text}`);
 });
 
 test("nothing fits in a zero-width tile, so there is no label", () => {

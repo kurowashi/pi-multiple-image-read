@@ -74,12 +74,33 @@ test("without a CJK font, a Japanese file name is listed but its label is not dr
 	assert.match(text.text, /No Japanese-capable font is installed/);
 });
 
-test("a single unreadable file fails the whole call and names the file", async () => {
+test("an unreadable file is listed as skipped, and the other images still come back", async () => {
 	const dir = fixtureDir("e2e-broken");
-	writeSolidPng(dir, "ok.png", 100, 100, 0);
-	const broken = join(dir, "broken.png");
-	writeFileSync(broken, "not an image");
-	await assert.rejects(readImages([dir]), /cannot read .*broken\.png/);
+	writeSolidPng(dir, "a-ok.png", 100, 100, 0);
+	writeFileSync(join(dir, "broken.png"), "not an image");
+	writeSolidPng(dir, "c-ok.png", 100, 100, 90);
+	const blocks = await readImages([dir]);
+	assert.equal(blocks.filter((b) => b.type === "image").length, 1);
+	const text = blocks.at(-1);
+	assert.ok(text?.type === "text");
+	assert.match(text.text, /2 image\(s\) on 1 sheet\(s\)/);
+	assert.match(text.text, /skipped: .*broken\.png \(cannot decode: /);
+});
+
+test("a TIFF in a directory is listed as skipped, with its reason", async () => {
+	const dir = fixtureDir("e2e-tiff");
+	writeSolidPng(dir, "a.png", 100, 100, 0);
+	writeFileSync(join(dir, "scan.tif"), "not decoded");
+	const blocks = await readImages([dir]);
+	const text = blocks.at(-1);
+	assert.ok(text?.type === "text");
+	assert.match(text.text, /skipped: .*scan\.tif \(unsupported image type\)/);
+});
+
+test("when no file can be read, the call fails and lists why", async () => {
+	const dir = fixtureDir("e2e-all-broken");
+	writeFileSync(join(dir, "broken.png"), "not an image");
+	await assert.rejects(readImages([dir]), /no readable images: .*broken\.png \(cannot decode: /);
 });
 
 test("a tiny tile produces the readability note", async () => {
