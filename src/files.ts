@@ -45,8 +45,9 @@ export function expandInputs(inputs: readonly string[]): Expanded {
 	}
 	const { found, skipped } = collector;
 	if (found.length === 0) {
-		if (skipped.length > 0) throw new Error(`no readable images; skipped: ${skipped.map((s) => s.path).join(", ")}`);
-		throw new Error("no images given");
+		if (skipped.length === 0) throw new Error("no images given");
+		const reasons = skipped.map((s) => `${s.path} (${s.reason})`);
+		throw new Error(`no readable images; skipped: ${reasons.join(", ")}`);
 	}
 	return { paths: found, skipped };
 }
@@ -80,11 +81,10 @@ function expandHome(path: string): string {
 	return path;
 }
 
+/** An input that yields nothing is listed as skipped, so one empty input does not fail the others. */
 function matchGlob(raw: string, pattern: string): Matched {
 	const files = globSync(pattern).filter(isFile).sort(compareNatural);
-	const matched = split(files);
-	if (matched.images.length === 0 && matched.skipped.length === 0) throw new Error(`no images match: ${raw}`);
-	return matched;
+	return orSkip(raw, split(files), "no image matches");
 }
 
 function matchPath(raw: string, path: string): Matched {
@@ -93,15 +93,20 @@ function matchPath(raw: string, path: string): Matched {
 			.filter((entry) => entry.isFile())
 			.map((entry) => join(path, entry.name))
 			.sort(compareNatural);
-		const matched = split(files);
-		if (matched.images.length === 0 && matched.skipped.length === 0) throw new Error(`no images in directory: ${raw}`);
-		return matched;
+		return orSkip(raw, split(files), "no images in directory");
 	}
 	if (isFile(path)) {
 		if (!isImage(path)) throw new Error(`unsupported image type: ${raw}`);
 		return { images: [path], skipped: [] };
 	}
-	throw new Error(`not found: ${raw}`);
+	return { images: [], skipped: [{ path: raw, reason: "not found" }] };
+}
+
+/** Lists the input itself as skipped when it matched no image and no unsupported image. */
+function orSkip(raw: string, matched: Matched, reason: string): Matched {
+	if (matched.images.length === 0 && matched.skipped.length === 0)
+		return { images: [], skipped: [{ path: raw, reason }] };
+	return matched;
 }
 
 /** Separates readable images from unsupported image formats. Other files are not images and are ignored. */

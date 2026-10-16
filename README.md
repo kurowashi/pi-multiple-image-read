@@ -82,13 +82,12 @@ pi install /path/to/pi-multiple-image-read
 | 原因 | エラーの例 |
 |---|---|
 | 入力が空 | `no images given` |
-| glob が一致しない | `no images match: /tmp/none/*.png` |
-| ディレクトリに画像がない | `no images in directory: /tmp/empty` |
-| 存在しない | `not found: /tmp/missing.png` |
+| 全入力が画像を1枚も返さない | `no readable images; skipped: /tmp/none/*.png (no image matches)` |
 | 明示指定の形式が対応外 | `unsupported image type: /tmp/scan.tiff` |
 | offset が範囲外 | `offset 5 is past the last image (1 found)` |
 | 復号できない | 返答に `skipped: /tmp/broken.png (cannot decode: ...)` と出て、残りは返る。全件失敗なら `no readable images: ...` |
 | TIFF（ディレクトリ・glob 内） | 返答に `skipped: /tmp/x/scan.tif (unsupported image type)` |
+| glob が一致しない・存在しない・画像のないディレクトリ | 返答に `skipped: /tmp/none/*.jpg (no image matches)` / `(not found)` / `(no images in directory)` と出て、残りは返る |
 
 ## 開発
 

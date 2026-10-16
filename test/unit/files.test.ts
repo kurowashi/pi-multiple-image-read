@@ -83,18 +83,43 @@ test("an explicit file of an unsupported type is rejected with its name", () => 
 	assert.throws(() => expandInputs([path]), /unsupported image type: .*scan\.tiff/);
 });
 
-test("a missing path is reported by name", () => {
-	assert.throws(() => expandInputs(["/no/such/file.png"]), /not found: \/no\/such\/file\.png/);
+test("a missing path alone is an error that names it", () => {
+	assert.throws(
+		() => expandInputs(["/no/such/file.png"]),
+		/no readable images; skipped: \/no\/such\/file\.png \(not found\)/,
+	);
 });
 
-test("a glob with no matches is reported by its pattern", () => {
-	assert.throws(() => expandInputs(["/no/such/dir/*.png"]), /no images match: \/no\/such\/dir\/\*\.png/);
+test("a missing path beside a readable input is listed as skipped, and the rest are kept", () => {
+	const dir = fixtureDir("missing-beside");
+	const path = writeSolidPng(dir, "one.png", 10, 10);
+	const expanded = expandInputs([path, "/no/such/file.png"]);
+	assert.deepEqual(expanded.paths, [path]);
+	assert.deepEqual(expanded.skipped, [{ path: "/no/such/file.png", reason: "not found" }]);
 });
 
-test("an empty directory is an error, not an empty result", () => {
+test("a glob with no matches beside a readable input is listed as skipped by its pattern", () => {
+	const dir = fixtureDir("glob-beside");
+	const path = writeSolidPng(dir, "a.png", 10, 10);
+	const pattern = join(dir, "*.jpg");
+	const expanded = expandInputs([join(dir, "*.png"), pattern]);
+	assert.deepEqual(expanded.paths, [path]);
+	assert.deepEqual(expanded.skipped, [{ path: pattern, reason: "no image matches" }]);
+});
+
+test("when no input yields an image, the call fails and names each skipped input", () => {
+	assert.throws(
+		() => expandInputs(["/no/such/dir/*.png"]),
+		/no readable images; skipped: \/no\/such\/dir\/\*\.png \(no image matches\)/,
+	);
+});
+
+test("an empty directory is skipped with its reason, not an empty result", () => {
 	const dir = fixtureDir("empty");
 	mkdirSync(join(dir, "sub"), { recursive: true });
 	assert.throws(() => expandInputs([dir]), /no images in directory/);
+	const path = writeSolidPng(fixtureDir("empty-beside"), "one.png", 10, 10);
+	assert.deepEqual(expandInputs([path, dir]).skipped, [{ path: dir, reason: "no images in directory" }]);
 });
 
 test("no inputs is an error", () => {

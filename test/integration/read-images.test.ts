@@ -87,6 +87,19 @@ test("an unreadable file is listed as skipped, and the other images still come b
 	assert.match(text.text, /skipped: .*broken\.png \(cannot decode: /);
 });
 
+test("a glob that matches no file of one type is listed as skipped, and the other types still come back", async () => {
+	const dir = fixtureDir("e2e-no-jpg");
+	writeSolidPng(dir, "a.png", 100, 100, 0);
+	writeSolidPng(dir, "b.png", 100, 100, 90);
+	const blocks = await readImages([join(dir, "*.png"), join(dir, "*.jpg"), join(dir, "*.jpeg")]);
+	assert.equal(blocks.filter((b) => b.type === "image").length, 1);
+	const text = blocks.at(-1);
+	assert.ok(text?.type === "text");
+	assert.match(text.text, /2 image\(s\) on 1 sheet\(s\)/);
+	assert.match(text.text, /skipped: .*\*\.jpg \(no image matches\)/);
+	assert.match(text.text, /skipped: .*\*\.jpeg \(no image matches\)/);
+});
+
 test("a TIFF in a directory is listed as skipped, with its reason", async () => {
 	const dir = fixtureDir("e2e-tiff");
 	writeSolidPng(dir, "a.png", 100, 100, 0);
