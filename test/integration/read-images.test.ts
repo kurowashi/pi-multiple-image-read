@@ -112,3 +112,40 @@ test("a tiny tile produces the readability note", async () => {
 	assert.ok(text?.type === "text");
 	assert.match(text.text, /hard to read/);
 });
+
+test("more than one page: the first page names the next offset, and the last page says it is the end", async () => {
+	const dir = fixtureDir("e2e-paging");
+	for (let i = 1; i <= 50; i++) writeSolidPng(dir, `p${String(i).padStart(2, "0")}.png`, 40, 40, i);
+	const first = await readImages([dir]);
+	const firstText = first.at(-1);
+	assert.ok(firstText?.type === "text");
+	assert.match(firstText.text, /Showing inputs 1-48 of 50\. For the rest, call again with offset 48\./);
+
+	const second = await readImages([dir], { offset: 48 });
+	const secondText = second.at(-1);
+	assert.ok(secondText?.type === "text");
+	assert.match(secondText.text, /Showing inputs 49-50 of 50\./);
+	assert.doesNotMatch(secondText.text, /call again/);
+});
+
+test("a shared label is the same on every page, because labels are decided over all inputs", async () => {
+	const a = fixtureDir("e2e-paging-shared-a");
+	const b = fixtureDir("e2e-paging-shared-b");
+	for (let i = 1; i <= 49; i++) writeSolidPng(a, `p${String(i).padStart(2, "0")}.png`, 400, 300, i);
+	writeSolidPng(b, "p49.png", 400, 300, 0);
+	// a/p49.png is image 49 (page 2), and b/p49.png is image 50 (page 2) too; both share the stem "p49".
+	const onPage2 = await readImages([a, b], { offset: 48 });
+	const text = onPage2.at(-1);
+	assert.ok(text?.type === "text");
+	// Both files are on page 2, so the list must name each file with its real path, not an empty string.
+	// Positions are input positions: the two images are 49 and 50 of 50, not 1 and 2 of the page.
+	assert.match(text.text, / {2}49\. .*e2e-paging-shared-a.*p49\.png \(label shared with another file\)/);
+	assert.match(text.text, / {2}50\. .*e2e-paging-shared-b.*p49\.png \(label shared with another file\)/);
+	assert.doesNotMatch(text.text, /\d+\. {2}\(/, "no listed line may lack a path");
+});
+
+test("an offset past the last image is an error that says how many were found", async () => {
+	const dir = fixtureDir("e2e-paging-past");
+	writeSolidPng(dir, "only.png", 40, 40, 0);
+	await assert.rejects(readImages([dir], { offset: 5 }), /offset 5 is past the last image \(1 found\)/);
+});

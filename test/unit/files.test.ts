@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
-import { compareNatural, expandInputs, MAX_IMAGES } from "../../src/files.ts";
+import { compareNatural, expandInputs } from "../../src/files.ts";
 import { fixtureDir, writeSolidPng } from "../helpers/images.ts";
 
 test("natural order puts img2 before img10", () => {
@@ -101,8 +101,8 @@ test("no inputs is an error", () => {
 	assert.throws(() => expandInputs([]), /no images given/);
 });
 
-test("more than the per-call cap is refused, and the message says how many matched", () => {
+test("expansion returns every match, however many; the per-call page is applied later", () => {
 	const dir = fixtureDir("over-cap");
-	for (let i = 0; i <= MAX_IMAGES; i++) writeSolidPng(dir, `img${i}.png`, 4, 4);
-	assert.throws(() => expandInputs([dir]), new RegExp(`${MAX_IMAGES + 1} images matched`));
+	for (let i = 0; i <= 48; i++) writeSolidPng(dir, `img${i}.png`, 4, 4);
+	assert.equal(expandInputs([dir]).paths.length, 49, "paging, not expansion, applies the per-call size");
 });

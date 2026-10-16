@@ -7,7 +7,7 @@
 
 - 登録するツールは `read_images` の1つだけ。コマンドもイベントハンドラも登録しない（`test/contract/surface.test.ts`）。
 - 引数は `paths`（文字列の配列、1件以上）だけで、未知の引数は拒否する（`additionalProperties: false`）。description は280文字以内（`test/contract/surface.test.ts`）。
-- 1回の呼び出しは48枚まで。超えるとエラーにし、件数を示す（`test/unit/files.test.ts`）。
+- 1回の呼び出しは48枚まで。超える分は `offset` で次の呼び出しに回し、返答に続きの offset を示す（`test/integration/read-images.test.ts`）。範囲外の offset はエラー。
 - 入力は画像ファイル・ディレクトリ・glob。ディレクトリと glob は画像の拡張子のファイルだけを使い、入力順（自然順）に並べる。重複は1回だけ数える（`test/unit/files.test.ts`）。
 - 画像の拡張子は `.png` / `.jpg` / `.jpeg` / `.webp` / `.bmp` / `.gif` だけ。TIFF は対象外。明示指定すると `unsupported image type` で失敗し、ディレクトリ・glob 内では `skipped` として返答に列挙する（`test/unit/files.test.ts`、[ADR 0001](docs/adr/0001-canvas-for-compositing.md)）。
 - 1シートは最大12枚。13枚目以降は次のシートにする（`test/integration/read-images.test.ts`）。

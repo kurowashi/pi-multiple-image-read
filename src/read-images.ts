@@ -21,6 +21,9 @@ export type ContentBlock =
 	| { type: "image"; data: string; mimeType: "image/png" | "image/jpeg" }
 	| { type: "text"; text: string };
 
+/** Images per call. A call returns at most this many; `offset` reads the next page. */
+const PAGE_SIZE = 48;
+
 /** A position on the sheets, the file behind it, and how its label fared. */
 interface Placed {
 	position: number;
@@ -31,69 +34,96 @@ interface Placed {
 
 /**
  * Returns one image block per sheet, then a text block only when something needs a line: a label that cannot
- * identify its image, a file that was skipped, or a file that could not be read. Other images are identified by label.
+ * identify its image, a file that was skipped or unreadable, or more images than this page holds.
  */
 export async function readImages(
 	inputs: readonly string[],
-	{ fontFamily = findCjkFamily() }: { fontFamily?: string | null } = {},
+	{ offset = 0, fontFamily = findCjkFamily() }: { offset?: number; fontFamily?: string | null } = {},
 ): Promise<ContentBlock[]> {
 	const expanded = expandInputs(inputs);
-	const candidates = expanded.paths;
-	// Labels come from every candidate, so a file that later fails to decode does not change another file's label.
-	const labels = tileLabels(candidates);
+	const total = expanded.paths.length;
+	if (offset >= total) throw new Error(`offset ${offset} is past the last image (${total} found)`);
+	const end = Math.min(offset + PAGE_SIZE, total);
+	// Labels come from every input, so a page's labels do not depend on which page it is.
+	const labels = tileLabels(expanded.paths);
+	const page = await composePage(expanded.paths.slice(offset, end), offset, labels, fontFamily);
+
+	const range = pageRange(offset, end, total);
+	if (page.sheets.length === 0 && range === "") {
+		throw new Error(`no readable images: ${page.unreadable.map((u) => `${u.path} (${u.reason})`).join("; ")}`);
+	}
+
+	const blocks: ContentBlock[] = page.sheets.map((sheet) => ({
+		type: "image",
+		data: sheet.data,
+		mimeType: sheet.mimeType,
+	}));
+	const text = describe({
+		placed: page.placed,
+		skipped: expanded.skipped,
+		unreadable: page.unreadable,
+		sheetCount: page.sheets.length,
+		tiles: page.sheets.flatMap((sheet) => sheet.tiles),
+		fontFamily,
+		range,
+	});
+	if (text.length > 0) blocks.push({ type: "text", text });
+	return blocks;
+}
+
+interface Page {
+	sheets: Sheet[];
+	placed: Placed[];
+	unreadable: Skipped[];
+}
+
+/** Decodes and packs one page, a sheet at a time. Positions are input positions across all pages. */
+async function composePage(
+	paths: readonly string[],
+	offset: number,
+	labels: readonly string[],
+	fontFamily: string | null,
+): Promise<Page> {
 	const labelCount = countLabels(labels);
-
-	const sheets: Sheet[] = [];
-	const placed: Placed[] = [];
-	const unreadable: Skipped[] = [];
-
-	for (let start = 0; start < candidates.length; start += PER_SHEET) {
-		const chunk = candidates.slice(start, start + PER_SHEET);
+	const page: Page = { sheets: [], placed: [], unreadable: [] };
+	for (let start = 0; start < paths.length; start += PER_SHEET) {
+		const chunk = paths.slice(start, start + PER_SHEET);
 		// Decoded images are held for one sheet at a time, so memory stays bounded by PER_SHEET.
 		const decoded = await Promise.all(chunk.map((path) => decodeOrReason(path)));
 		const items: SheetItem[] = [];
 		const members: number[] = [];
 		decoded.forEach((result, i) => {
-			const index = start + i;
+			const index = offset + start + i;
 			if (result.ok) {
 				items.push({ label: labelAt(labels, index), image: result.image });
 				members.push(index);
 			} else {
-				unreadable.push({ path: chunk[i] ?? "", reason: result.reason });
+				page.unreadable.push({ path: chunk[i] ?? "", reason: result.reason });
 			}
 		});
 		if (items.length === 0) continue;
 
 		const sheet = composeSheet(items, fontFamily);
-		sheets.push(sheet);
+		page.sheets.push(sheet);
 		// Positions follow the reading order on the sheet, which is the order of the items.
 		for (const tile of [...sheet.tiles].sort((x, y) => x.index - y.index)) {
 			const index = members[tile.index];
 			if (index === undefined) throw new RangeError(`no member for tile ${tile.index}`);
-			placed.push({
-				position: placed.length + 1,
-				path: candidates[index] ?? "",
+			page.placed.push({
+				position: offset + page.placed.length + 1,
+				path: labelPath(paths, offset, index),
 				label: tile.label,
 				shared: (labelCount.get(labelAt(labels, index)) ?? 0) > 1,
 			});
 		}
 	}
+	return page;
+}
 
-	if (sheets.length === 0) {
-		throw new Error(`no readable images: ${unreadable.map((u) => `${u.path} (${u.reason})`).join("; ")}`);
-	}
-
-	const blocks: ContentBlock[] = sheets.map((sheet) => ({ type: "image", data: sheet.data, mimeType: sheet.mimeType }));
-	const text = describe({
-		placed,
-		skipped: expanded.skipped,
-		unreadable,
-		sheetCount: sheets.length,
-		tiles: sheets.flatMap((sheet) => sheet.tiles),
-		fontFamily,
-	});
-	if (text.length > 0) blocks.push({ type: "text", text });
-	return blocks;
+function labelPath(paths: readonly string[], offset: number, index: number): string {
+	const path = paths[index - offset];
+	if (path === undefined) throw new RangeError(`no path for position ${index}`);
+	return path;
 }
 
 interface Description {
@@ -103,6 +133,8 @@ interface Description {
 	sheetCount: number;
 	tiles: readonly TileReport[];
 	fontFamily: string | null;
+	/** Which images this page covers, and the offset for the next page. Empty when everything fits in one call. */
+	range: string;
 }
 
 /** The text block: notes, and a line for each image whose name the label cannot give. Empty when none applies. */
@@ -122,9 +154,19 @@ function describe(d: Description): string {
 	for (const skip of d.skipped) listed.push(`  skipped: ${skip.path} (${skip.reason})`);
 	for (const bad of d.unreadable) listed.push(`  skipped: ${bad.path} (${bad.reason})`);
 
-	if (listed.length === 0) return notes.join("\n");
+	if (listed.length === 0 && d.range === "") return notes.join("\n");
 	const summary = `${d.placed.length} image(s) on ${d.sheetCount} sheet(s); positions run in input order, left to right, top to bottom.`;
-	return [...notes, summary, ...listed].join("\n");
+	return [...notes, ...(d.range === "" ? [] : [d.range]), summary, ...listed].join("\n");
+}
+
+/**
+ * Empty when the call covers every image from the start. Otherwise, the input span this call covers and the next
+ * offset, if any. The span counts inputs, so it can exceed the number of images returned when some files were skipped.
+ */
+function pageRange(offset: number, end: number, total: number): string {
+	if (offset === 0 && end === total) return "";
+	const shown = `Showing inputs ${offset + 1}-${end} of ${total}.`;
+	return end < total ? `${shown} For the rest, call again with offset ${end}.` : shown;
 }
 
 function countLabels(labels: readonly string[]): Map<string, number> {

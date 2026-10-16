@@ -34,9 +34,6 @@ interface Matched {
 	skipped: Skipped[];
 }
 
-/** Hard cap per call. It stops a broad glob from filling the context. */
-export const MAX_IMAGES = 48;
-
 const GLOB_CHARACTERS = /[*?[\]{}]/;
 
 export function expandInputs(inputs: readonly string[]): Expanded {
@@ -50,9 +47,6 @@ export function expandInputs(inputs: readonly string[]): Expanded {
 	if (found.length === 0) {
 		if (skipped.length > 0) throw new Error(`no readable images; skipped: ${skipped.map((s) => s.path).join(", ")}`);
 		throw new Error("no images given");
-	}
-	if (found.length > MAX_IMAGES) {
-		throw new Error(`${found.length} images matched; the limit is ${MAX_IMAGES} per call. Narrow the paths.`);
 	}
 	return { paths: found, skipped };
 }

@@ -1,7 +1,7 @@
 /**
  * Contract: the model-facing surface stays exactly what the ADR decided.
  *
- * One tool, one required parameter. The tool description and parameter list
+ * One tool, one required parameter and one optional paging offset. The tool description and parameter list
  * are paid for on every request, so they are pinned here.
  */
 
@@ -21,7 +21,7 @@ const EXPECTED_TOOLS = ["read_images"];
 const MAX_DESCRIPTION_CHARS = 280;
 
 /** The exact top-level parameter names; a rename is a model-facing surface change. */
-const EXPECTED_PARAMETERS = ["paths"];
+const EXPECTED_PARAMETERS = ["paths", "offset"];
 
 interface SchemaShape {
 	type?: string;
@@ -53,7 +53,7 @@ test("the tool has a label, a description within the cap, and an object schema",
 	assert.equal((tool.parameters as SchemaShape).type, "object");
 });
 
-test("the schema is closed, exposes exactly the decided parameters, and requires paths", async () => {
+test("the schema is closed, exposes exactly the decided parameters, and requires only paths", async () => {
 	const [tool] = [...(await loadTools()).values()];
 	assert.ok(tool, "the tool must be registered");
 	const schema = tool.parameters as SchemaShape;

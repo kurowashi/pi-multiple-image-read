@@ -30,9 +30,9 @@ pi install /path/to/pi-multiple-image-read
 | 項目 | 内容 |
 |---|---|
 | ツール名 | `read_images` |
-| 引数 | `paths`（文字列の配列、1件以上）。ファイル、ディレクトリ、glob を混ぜて指定できる |
+| 引数 | `paths`（文字列の配列、1件以上）。ファイル、ディレクトリ、glob を混ぜて指定できる。`offset`（省略可、既定 0）は先頭から飛ばす枚数 |
 | 対応形式 | PNG / JPEG / WebP / BMP / GIF（GIF は先頭フレーム）。TIFF は対象外 |
-| 1回の上限 | 48枚。超えるとエラーになる |
+| 1回の上限 | 48枚。超える分は `offset` で次の呼び出しに回す。返答に「Showing inputs 1-48 of 130. For the rest, call again with offset 48.」と出る
 | 1シートの枚数 | 最大12枚。13枚目以降は次のシートになる |
 | シートの大きさ | Claude の標準画像予算（長辺 1568 px、1568 トークン）に収まる。枚数に応じて配置を変える |
 | 並び順 | 入力順。ディレクトリと glob の中は自然順（`img2` は `img10` より前） |
@@ -86,7 +86,7 @@ pi install /path/to/pi-multiple-image-read
 | ディレクトリに画像がない | `no images in directory: /tmp/empty` |
 | 存在しない | `not found: /tmp/missing.png` |
 | 明示指定の形式が対応外 | `unsupported image type: /tmp/scan.tiff` |
-| 上限超過 | `60 images matched; the limit is 48 per call. Narrow the paths.` |
+| offset が範囲外 | `offset 5 is past the last image (1 found)` |
 | 復号できない | 返答に `skipped: /tmp/broken.png (cannot decode: ...)` と出て、残りは返る。全件失敗なら `no readable images: ...` |
 | TIFF（ディレクトリ・glob 内） | 返答に `skipped: /tmp/x/scan.tif (unsupported image type)` |
 
