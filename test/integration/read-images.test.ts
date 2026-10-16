@@ -9,29 +9,33 @@ import { test } from "node:test";
 import { readImages } from "../../src/read-images.ts";
 import { fixtureDir, writeSolidPng } from "../helpers/images.ts";
 
-test("fifteen images give two sheets, the first full, and a text index in input order", async () => {
+test("fifteen images that all have readable labels give two sheets and no text block", async () => {
 	const dir = fixtureDir("e2e-15");
 	for (let i = 1; i <= 15; i++) writeSolidPng(dir, `shot_${String(i).padStart(2, "0")}.png`, 400, 300, i * 20);
 	const blocks = await readImages([dir]);
-	const images = blocks.filter((b) => b.type === "image");
-	const text = blocks.find((b) => b.type === "text");
-	assert.equal(images.length, 2);
-	assert.ok(text?.type === "text");
-	assert.match(text.text, /^15 image\(s\) on 2 sheet\(s\), in input order/);
-	assert.match(text.text, /Sheet 1 \(positions 1-12\)/);
-	assert.match(text.text, /Sheet 2 \(positions 13-15\)/);
-	assert.match(text.text, /13\. .*shot_13\.png/);
+	assert.equal(blocks.filter((b) => b.type === "image").length, 2);
+	assert.equal(
+		blocks.some((b) => b.type === "text"),
+		false,
+	);
 });
 
-test("the text block is always last, after every image", async () => {
+test("the text block, when present, comes after every image", async () => {
 	const dir = fixtureDir("e2e-order");
-	writeSolidPng(dir, "a.png", 100, 100, 0);
+	writeSolidPng(
+		dir,
+		"a-very-long-file-name-that-cannot-possibly-fit-on-a-small-tile-in-any-sheet-layout-here.png",
+		400,
+		300,
+		0,
+	);
+	writeSolidPng(dir, "b.png", 100, 100, 90);
 	const blocks = await readImages([dir]);
 	assert.equal(blocks.at(-1)?.type, "text");
 	assert.ok(blocks.slice(0, -1).every((b) => b.type === "image"));
 });
 
-test("a truncated label is named in the text block, by position", async () => {
+test("a truncated label is listed by position, and readable labels are not", async () => {
 	const dir = fixtureDir("e2e-cut");
 	writeSolidPng(dir, "short.png", 400, 300, 0);
 	writeSolidPng(
@@ -45,6 +49,19 @@ test("a truncated label is named in the text block, by position", async () => {
 	const text = blocks.at(-1);
 	assert.ok(text?.type === "text");
 	assert.match(text.text, /1\. .*a-very-long.*\(label cut off\)/);
+	assert.doesNotMatch(text.text, /short\.png/);
+});
+
+test("two files with the same name in different directories are both listed as shared", async () => {
+	const first = fixtureDir("e2e-shared-a");
+	const second = fixtureDir("e2e-shared-b");
+	const a = writeSolidPng(first, "shot.png", 400, 300, 0);
+	const b = writeSolidPng(second, "shot.png", 400, 300, 90);
+	const blocks = await readImages([a, b]);
+	const text = blocks.at(-1);
+	assert.ok(text?.type === "text");
+	assert.match(text.text, /1\. .*e2e-shared-a.*shot\.png \(label shared with another file\)/);
+	assert.match(text.text, /2\. .*e2e-shared-b.*shot\.png \(label shared with another file\)/);
 });
 
 test("without a CJK font, a Japanese file name is listed but its label is not drawn", async () => {

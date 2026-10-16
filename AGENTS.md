@@ -15,7 +15,7 @@
 - タイルはソース画像の高さを超えない。タイル同士は重ならず、シートの内側に収まる（`test/unit/layout.test.ts`）。
 - シートは PNG で、base64 が 4.5 MiB 以下なら PNG のまま返す。超えるときは JPEG を品質 92 → 85 → 75 → 65 → 50 の順に試し、最初に収まったものを返す。どれも収まらなければ q50 の結果を返し、Pi の自動リサイズに任せる（`test/unit/render.test.ts`）。
 - 1枚でも復号できなければ全体を失敗させる。エラーは `cannot read <path>: <reason>`（`test/integration/read-images.test.ts`）。
-- 返答テキストは、画像ブロックの後ろに1つだけ置く。入力順の `位置. パス` を示し、切り詰めは `(label cut off)`、描けないは `(label not drawn)` を付ける（`test/integration/read-images.test.ts`）。
+- 返答テキストは、画像ブロックの後ろに1つだけ置く。ラベルが切れた・描けない・同名で共有されている画像がある場合だけ置き、それ以外の画像は載せない。載せる行は入力の `位置. パス` と、`(label cut off)` / `(label not drawn)` / `(label shared with another file)` のいずれかで、テキストの有無は `test/integration/read-images.test.ts` で固定する。変更は [ADR 0003](docs/adr/0003-text-lists-only-unlabelled-images.md) を先に読む。
 - 160 px 未満のタイルがあれば注意の注記を出す（`MIN_TILE`、`test/unit/render.test.ts`、`test/integration/read-images.test.ts`）。
 - 日本語フォントは `src/font.ts` の候補から、システムにある最初のものを使う。見つからなければ非 ASCII のラベルは描かず、注記を出す（`test/unit/labels.test.ts`、`test/integration/read-images.test.ts`）。
 - ファイルシステム API は `node:fs` を読み取りに使う。`src` が使える node builtin は `node:fs` / `node:os` / `node:path` だけ（`test/contract/dependencies.test.ts`）。

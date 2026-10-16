@@ -6,7 +6,7 @@
 ```
 read_images(paths: ["/tmp/shots/*.png"])
   → 12枚ごとのシート（ラベル付き）が画像として入る
-  → 返答テキストが、入力順の位置と元のパスを示す
+  → ラベルで識別できない画像だけ、返答テキストが位置と元のパスを示す
 ```
 
 ## 使い方
@@ -40,21 +40,19 @@ pi install /path/to/pi-multiple-image-read
 
 ### 返答テキスト
 
-画像ブロックの後に、テキストが1つ付きます。
+ラベルで識別できる画像は、テキストに出ません。テキストが付くのは、次のいずれかの画像がある場合だけです。
 
 ```
-13 image(s) on 2 sheet(s), in input order (left to right, top to bottom).
-Sheet 1 (positions 1-12):
-  1. /tmp/shots/shot_01.png
-  ...
+13 image(s) on 2 sheet(s); positions run in input order, left to right, top to bottom. Listed: labels cut off, not drawn, or shared.
   6. /tmp/shots/a-very-long-name.png (label cut off)
-Sheet 2 (positions 13-13):
-  13. /tmp/shots/shot_13.png
+  13. /tmp/shots/other/shot_13.png (label shared with another file)
 ```
 
-- 位置番号は、シートの左から右、上から下の順です。ラベルが読みにくいときは、この番号で元のパスを照合します。
+- 位置番号は、シートの左から右、上から下の順の通し番号です。
 - `(label cut off)`: ラベルが長すぎて、末尾を `…` で省いた。
 - `(label not drawn)`: 日本語のラベルを描けなかった（後述）。
+- `(label shared with another file)`: 同じ名前のファイルが別のディレクトリにあり、ラベルで区別できない。
+- 判断の経緯は [docs/adr/0003](docs/adr/0003-text-lists-only-unlabelled-images.md) にあります。
 
 ### タイルの大きさに関する注意
 
@@ -72,7 +70,7 @@ Sheet 2 (positions 13-13):
 5. Yu Gothic / Meiryo（Windows）
 
 どれも見つからないと、日本語を含むラベルは描かれず、返答に `(label not drawn)` と注記が付きます。
-画像の中ではファイル名が読めませんが、返答テキストの位置番号とパスで対応が分かります。
+画像の中ではファイル名が読めませんが、返答テキストの位置番号とパスで対応が分かります（その画像が一覧に入ります）。
 日本語のラベルを描くには、Noto Sans CJK JP などのフォントをインストールしてください。
 なお、macOS と Windows の候補名は、この開発環境では確認していません。
 

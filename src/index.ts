@@ -15,7 +15,7 @@ export default function multipleImageReadExtension(pi: ExtensionAPI): void {
 		label: "Read images",
 		description:
 			"Show local images to the model as labelled contact sheets. Accepts files, directories, or globs (max 48 per call). " +
-			"Each image is labelled by file name; the text result lists positions and paths. Tiles are small, so fine detail may not show.",
+			"Each image is labelled by file name; the text result lists only images whose label is cut off, not drawn, or shared. Tiles are small, so fine detail may not show.",
 		parameters: Type.Object(
 			{
 				paths: Type.Array(Type.String(), {
