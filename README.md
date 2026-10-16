@@ -4,7 +4,7 @@
 画像を1枚ずつ `read` に渡す代わりに、ファイル名のラベルを付けた「コンタクトシート」にまとめます。
 
 ```
-read_images(paths: ["/tmp/shots/*.png"])
+read_images(paths: ["/tmp/shots/"])
   → 24枚ごとのシート（ラベル付き）が画像として入る
   → ラベルで識別できない画像だけ、返答テキストが位置と元のパスを示す
 ```
@@ -30,7 +30,7 @@ pi install /path/to/pi-multiple-image-read
 | 項目 | 内容 |
 |---|---|
 | ツール名 | `read_images` |
-| 引数 | `paths`（文字列の配列、1件以上）。ファイル、ディレクトリ、glob を混ぜて指定できる。`offset`（省略可、既定 0）は先頭から飛ばす枚数 |
+| 引数 | `paths`（文字列の配列、1件以上）。ファイル、ディレクトリ、glob を混ぜて指定できる。全形式を拾うにはディレクトリか `dir/*` を使う（`*.png` は PNG だけになる）。`offset`（省略可、既定 0）は先頭から飛ばす枚数 |
 | 対応形式 | PNG / JPEG / WebP / BMP / GIF（GIF は先頭フレーム）。TIFF は対象外 |
 | 1回の上限 | 48枚。超える分は `offset` で次の呼び出しに回す。返答に「Showing inputs 1-48 of 130. For the rest, call again with offset 48.」と出る
 | 1シートの枚数 | 最大24枚。25枚目以降は次のシートになる |
