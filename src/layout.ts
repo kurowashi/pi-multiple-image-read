@@ -1,17 +1,18 @@
 /**
  * Pure sheet layout: where each tile goes on a sheet, with no pixels and no I/O.
  *
- * A sheet is sized so that the model sees every tile at full resolution within
- * the image budget. Larger sheets would be downscaled by the model without notice.
+ * A sheet is sized so that every tile is shown at full resolution within the image
+ * cap. Pi downscales any image whose long edge exceeds 2000 px, which would thin the
+ * labels, so a sheet never goes past that.
  */
 
-/** Long edge of a sheet in px (the standard image budget). */
-export const MAX_EDGE = 1568;
+/** Long edge of a sheet in px. pi resizes any longer image to 2000 px, so a sheet stays at or below it. */
+export const MAX_EDGE = 2000;
 /** Patches a sheet may span: each patch is PATCH x PATCH px and costs one visual token. */
-export const MAX_PATCHES = 1568;
+export const MAX_PATCHES = 4784;
 export const PATCH = 28;
 /** Images per sheet. More images go to more sheets, not to smaller tiles. */
-export const PER_SHEET = 12;
+export const PER_SHEET = 24;
 /** Smallest label font in px. Below this, labels are truncated rather than shrunk further. */
 export const MIN_FONT = 16;
 /** Tiles smaller than this (px, either side) make the reply warn that the images may be hard to read. */

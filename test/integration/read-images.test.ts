@@ -9,9 +9,9 @@ import { test } from "node:test";
 import { readImages } from "../../src/read-images.ts";
 import { fixtureDir, writeSolidPng } from "../helpers/images.ts";
 
-test("fifteen images that all have readable labels give two sheets and no text block", async () => {
-	const dir = fixtureDir("e2e-15");
-	for (let i = 1; i <= 15; i++) writeSolidPng(dir, `shot_${String(i).padStart(2, "0")}.png`, 400, 300, i * 20);
+test("twenty-five images that all have readable labels give two sheets and no text block", async () => {
+	const dir = fixtureDir("e2e-25");
+	for (let i = 1; i <= 25; i++) writeSolidPng(dir, `shot_${String(i).padStart(2, "0")}.png`, 400, 300, i * 10);
 	const blocks = await readImages([dir]);
 	assert.equal(blocks.filter((b) => b.type === "image").length, 2);
 	assert.equal(

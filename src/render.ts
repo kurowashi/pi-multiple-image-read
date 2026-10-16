@@ -58,7 +58,8 @@ export function composeSheet(items: readonly SheetItem[], fontFamily: string | n
 
 	const canvas = createCanvas(layout.width, layout.height);
 	const ctx = canvas.getContext("2d");
-	ctx.imageSmoothingQuality = "high";
+	// Measured: "high" blurred thin strokes of small labels and the model misread them; "medium" did not (ADR 0005).
+	ctx.imageSmoothingQuality = "medium";
 	ctx.fillStyle = GAP_RGB;
 	ctx.fillRect(0, 0, layout.width, layout.height);
 

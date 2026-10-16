@@ -4,7 +4,18 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { balancedRows, fits, MAX_EDGE, MAX_PATCHES, metrics, PATCH, planLayout, type Tile } from "../../src/layout.ts";
+import {
+	balancedRows,
+	fits,
+	MAX_EDGE,
+	MAX_PATCHES,
+	MIN_TILE,
+	metrics,
+	PATCH,
+	PER_SHEET,
+	planLayout,
+	type Tile,
+} from "../../src/layout.ts";
 
 /** Element at `i`; fails the test instead of returning undefined. */
 function at<T>(xs: readonly T[], i: number): T {
@@ -32,11 +43,29 @@ test("balancedRows minimises the largest row sum", () => {
 });
 
 test("fits enforces both the long-edge cap and the patch cap", () => {
-	assert.ok(fits(MAX_EDGE, MAX_EDGE / 2), "a sheet at the long-edge cap fits");
+	const longest = Math.floor(MAX_EDGE / PATCH) * PATCH;
+	assert.ok(fits(longest, longest / 2), "a sheet at the largest patch-aligned long edge fits");
 	assert.ok(!fits(MAX_EDGE + PATCH, 100), "a sheet past the long-edge cap does not fit");
 	const side = Math.floor(Math.sqrt(MAX_PATCHES)) * PATCH;
 	assert.ok(fits(side, side), "a square at the patch cap fits");
 	assert.ok(!fits(side + PATCH, side + PATCH), "a square past the patch cap does not fit");
+});
+
+test("the long edge stays within pi's default resize cap, so pi never downscales a sheet", () => {
+	assert.ok(MAX_EDGE <= 2000, `MAX_EDGE is ${MAX_EDGE}; pi's default resize cap is 2000 px`);
+});
+
+test("a full sheet keeps every tile at least MIN_TILE on each side", () => {
+	const aspects = Array.from({ length: PER_SHEET }, () => 1280 / 800);
+	const layout = planLayout(
+		aspects,
+		aspects.map(() => 800),
+	);
+	assert.ok(layout);
+	for (const t of layout.tiles) {
+		assert.ok(t.x1 - t.x0 >= MIN_TILE, `tile width ${t.x1 - t.x0} is below ${MIN_TILE}`);
+		assert.ok(t.y1 - t.y0 >= MIN_TILE, `tile height ${t.y1 - t.y0} is below ${MIN_TILE}`);
+	}
 });
 
 test("a sheet never exceeds the budget, for varied aspect ratios", () => {

@@ -10,8 +10,8 @@
 - 1回の呼び出しは48枚まで。超える分は `offset` で次の呼び出しに回し、返答に続きの offset を示す（`test/integration/read-images.test.ts`）。範囲外の offset はエラー。
 - 入力は画像ファイル・ディレクトリ・glob。ディレクトリと glob は画像の拡張子のファイルだけを使い、入力順（自然順）に並べる。重複は1回だけ数える（`test/unit/files.test.ts`）。
 - 画像の拡張子は `.png` / `.jpg` / `.jpeg` / `.webp` / `.bmp` / `.gif` だけ。TIFF は対象外。明示指定すると `unsupported image type` で失敗し、ディレクトリ・glob 内では `skipped` として返答に列挙する（`test/unit/files.test.ts`、[ADR 0001](docs/adr/0001-canvas-for-compositing.md)）。
-- 1シートは最大12枚。13枚目以降は次のシートにする（`test/integration/read-images.test.ts`）。
-- 1シートの画像トークン（`ceil(w/28) × ceil(h/28)`）は1568以下、長辺は1568 px以下（`test/unit/layout.test.ts`）。
+- 1シートは最大24枚。25枚目以降は次のシートにする（`test/integration/read-images.test.ts`）。
+- 1シートの画像トークン（`ceil(w/28) × ceil(h/28)`）は4784以下、長辺は2000 px以下（`test/unit/layout.test.ts`）。長辺が2000 px を超えると Pi が縮小するため、この上限を超えない。
 - タイルはソース画像の高さを超えない。タイル同士は重ならず、シートの内側に収まる（`test/unit/layout.test.ts`）。
 - シートは PNG で、base64 が 4.5 MiB 以下なら PNG のまま返す。超えるときは JPEG を品質 92 → 85 → 75 → 65 → 50 の順に試し、最初に収まったものを返す。どれも収まらなければ q50 の結果を返し、Pi の自動リサイズに任せる（`test/unit/render.test.ts`）。
 - 復号できないファイルは載せず、返答に `skipped: <path> (cannot decode: <reason>)` を列挙して残りを返す。全件失敗のときだけエラーにする（`test/integration/read-images.test.ts`）。ラベルは復号の成否に関係なく、入力全体で決める。
