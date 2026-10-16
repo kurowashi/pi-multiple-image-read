@@ -13,12 +13,11 @@ import { loadExtension, loadTools } from "../helpers/extension.ts";
 const EXPECTED_TOOLS = ["read_images"];
 
 /**
- * The description is sent on every request. Measured with chars/4 as the token estimate:
- * a 456-char draft gave a 785-char tool payload (about 197 tokens); the current 240-char
- * description gives a 501-char payload (about 125 tokens). The cap keeps later edits from
- * growing it back.
+ * The description is sent on every request, and its only job is to tell the model when to pick this
+ * tool over `read`. It must not describe the tool's output, labels, or limits; the reply text does that.
+ * The cap keeps later edits from growing it back.
  */
-const MAX_DESCRIPTION_CHARS = 280;
+const MAX_DESCRIPTION_CHARS = 140;
 
 /** The exact top-level parameter names; a rename is a model-facing surface change. */
 const EXPECTED_PARAMETERS = ["paths", "offset"];
