@@ -15,10 +15,11 @@
 - タイルはソース画像の高さを超えない。タイル同士は重ならず、シートの内側に収まる（`test/unit/layout.test.ts`）。
 - シートは PNG で、base64 が 4.5 MiB 以下なら PNG のまま返す。超えるときは JPEG を品質 92 → 85 → 75 → 65 → 50 の順に試し、最初に収まったものを返す。どれも収まらなければ q50 の結果を返し、Pi の自動リサイズに任せる（`test/unit/render.test.ts`）。
 - 復号できないファイルは載せず、返答に `skipped: <path> (cannot decode: <reason>)` を列挙して残りを返す。全件失敗のときだけエラーにする（`test/integration/read-images.test.ts`）。ラベルは復号の成否に関係なく、入力全体で決める。
-- 返答テキストは、画像ブロックの後ろに1つだけ置く。ラベルが切れた・描けない・同名で共有されている画像、スキップしたファイルがある場合だけ置き、それ以外の画像は載せない。載せる行は `位置. パス` と、`(label cut off)` / `(label not drawn)` / `(label shared with another file)` のいずれか、または `skipped: <path> (<reason>)`。テキストの有無は `test/integration/read-images.test.ts` で固定する。変更は [ADR 0003](docs/adr/0003-text-lists-only-unlabelled-images.md) を先に読む。
+- 返答テキストは、画像ブロックの後ろに1つだけ置く。全画像の `番号. パス` を番号順に載せる。切れた・描けない・同名で共有されている画像は、行末に `(label cut off)` / `(label not drawn)` / `(label shared with another file)` のいずれかを付ける。スキップしたファイルは `skipped: <path> (<reason>)` で載せる（`test/integration/read-images.test.ts`）。変更は [ADR 0008](docs/adr/0008-numbered-labels-slice-layout.md) を先に読む。
 - 160 px 未満のタイルがあれば注意の注記を出す（`MIN_TILE`、`test/unit/render.test.ts`、`test/integration/read-images.test.ts`）。
 - 日本語フォントは `src/font.ts` の候補から、システムにある最初のものを使う。見つからなければ非 ASCII のラベルは描かず、注記を出す（`test/unit/labels.test.ts`、`test/integration/read-images.test.ts`）。
-- ラベルが長すぎるときは、先頭と末尾を残して中央を `…` で省く。連番は末尾に出るため（`test/unit/labels.test.ts`）。
+- ラベルは `番号 ファイル名` で描く。ファイル名が長すぎるときは、先頭と末尾を残して中央を `…` で省く。連番は末尾に出るため（`test/unit/labels.test.ts`）。
+- 配置は、各画像の面積が揃い、かつタイルが大きくなるように選ぶ（`test/unit/layout.test.ts`）。探索は固定シードで、同じ入力に同じ配置を返す。
 - ファイルシステム API は `node:fs` を読み取りに使う。`src` が使える node builtin は `node:fs` / `node:os` / `node:path` だけ（`test/contract/dependencies.test.ts`）。
 - 実行時依存は `@napi-rs/canvas` の1つだけで、バージョンは固定する。ビルド工程を持たない（`test/contract/dependencies.test.ts`）。
 

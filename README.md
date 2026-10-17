@@ -6,7 +6,7 @@
 ```
 read_images(paths: ["/tmp/shots/"])
   → 24枚ごとのシート（ラベル付き）が画像として入る
-  → ラベルで識別できない画像だけ、返答テキストが位置と元のパスを示す
+  → 返答テキストが、ラベルの番号と元のパスの対応を全件示す
 ```
 
 ## 使い方
@@ -35,25 +35,26 @@ pi install /path/to/pi-multiple-image-read
 | 1回の上限 | 48枚。超える分は `offset` で次の呼び出しに回す。返答に「Showing inputs 1-48 of 130. For the rest, call again with offset 48.」と出る
 | 1シートの枚数 | 最大24枚。25枚目以降は次のシートになる |
 | シートの大きさ | 長辺 2000 px 以下、画像トークン 4784 以下（Pi の画像上限に収まる）。枚数に応じて配置を変える |
-| 並び順 | 入力順。ディレクトリと glob の中は自然順（`img2` は `img10` より前） |
-| ラベル | ファイル名（拡張子を除く）。同じ名前が複数あるときは拡張子付きの完全なファイル名 |
+| 番号 | 入力順の1始まりの通し番号。ディレクトリと glob の中は自然順（`img2` は `img10` より前）。シート上の配置は入力順と一致しません |
+| ラベル | 番号とファイル名（拡張子を除く）。同じ名前が複数あるときは拡張子付きの完全なファイル名 |
 
 ### 返答テキスト
 
-ラベルで識別できる画像は、テキストに出ません。テキストが付くのは、次のいずれかの画像がある場合だけです。
+返答テキストには、全画像の番号とパスを番号順に載せます。ラベルが切れても、番号で元のファイルを特定できます。
 
 ```
-13 image(s) on 2 sheet(s); positions run in input order, left to right, top to bottom. Listed: labels cut off, not drawn, or shared.
-  6. /tmp/shots/a-very-long-name.png (label cut off)
+13 image(s) on 2 sheet(s). Each label shows its number, then the file name.
+  1. /tmp/shots/a-very-long-name.png (label cut off)
+  6. /tmp/shots/b.png
   13. /tmp/shots/other/shot_13.png (label shared with another file)
 ```
 
-- 位置番号は、シートの左から右、上から下の順の通し番号です。
+- 番号は入力順の通し番号です。ラベルの先頭に同じ番号を描きます。
 - `(label cut off)`: ラベルが長すぎて、中央を `…` で省いた（先頭と末尾は残す）。
-- `(label not drawn)`: 日本語のラベルを描けなかった（後述）。
+- `(label not drawn)`: 日本語の名前を描けなかった（後述）。番号は描かれています。
 - `(label shared with another file)`: 同じ名前のファイルが別のディレクトリにあり、ラベルで区別できない。
 - `skipped: <path> (<reason>)`: 読めなかった、または対応外の形式のファイル。残りの画像は返ります。
-- 判断の経緯は [docs/adr/0003](docs/adr/0003-text-lists-only-unlabelled-images.md) にあります。
+- 判断の経緯は [docs/adr/0008](docs/adr/0008-numbered-labels-slice-layout.md) にあります。
 
 ### タイルの大きさに関する注意
 
@@ -71,7 +72,7 @@ pi install /path/to/pi-multiple-image-read
 5. Yu Gothic / Meiryo（Windows）
 
 どれも見つからないと、日本語を含むラベルは描かれず、返答に `(label not drawn)` と注記が付きます。
-画像の中ではファイル名が読めませんが、返答テキストの位置番号とパスで対応が分かります（その画像が一覧に入ります）。
+画像の中ではファイル名が読めませんが、番号と返答テキストのパスで対応が分かります。
 日本語のラベルを描くには、Noto Sans CJK JP などのフォントをインストールしてください。
 なお、macOS と Windows の候補名は、この開発環境では確認していません。
 

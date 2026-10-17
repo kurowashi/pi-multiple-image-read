@@ -5,7 +5,7 @@
 import { type Canvas, createCanvas, type Image, type SKRSContext2D } from "@napi-rs/canvas";
 import { labelFont } from "./font.ts";
 import { canDrawLabel, fitLabel } from "./labels.ts";
-import { type Layout, MIN_TILE, planLayout } from "./layout.ts";
+import { type Layout, MIN_FONT, MIN_TILE, planLayout, type Tile } from "./layout.ts";
 
 /** Pi's inline image limit, in base64 bytes. Above it a PNG is re-encoded as JPEG. */
 export const INLINE_B64_MAX = 4.5 * 1024 * 1024;
@@ -18,10 +18,14 @@ const BAND_RGB = "rgb(20,20,20)";
 const TEXT_RGB = "rgb(240,240,240)";
 /** Horizontal padding inside a label band. */
 const LABEL_PAD = 8;
+/** Line height as a multiple of the font size. A label fits its band when its font is no taller than band / this. */
+const LABEL_LINE = 1.2;
 
 export interface SheetItem {
-	/** Label to draw, before fitting. */
-	label: string;
+	/** The image's position in the input, drawn in front of the name so the reply can refer to it. */
+	number: number;
+	/** File name without extension, or with it when two files share a stem. */
+	name: string;
 	image: Image;
 }
 
@@ -48,7 +52,7 @@ export function b64Length(bytes: number): number {
 	return 4 * Math.ceil(bytes / 3);
 }
 
-/** Draw the items as one sheet, in input order from left to right and top to bottom. */
+/** Draw the items as one sheet. Where each image goes is the layout's choice, not the input order's. */
 export function composeSheet(items: readonly SheetItem[], fontFamily: string | null): Sheet {
 	const layout = planLayout(
 		items.map((item) => item.image.width / item.image.height),
@@ -70,23 +74,28 @@ export function composeSheet(items: readonly SheetItem[], fontFamily: string | n
 		const height = tile.y1 - tile.y0;
 		ctx.drawImage(item.image, tile.x0, tile.y0, width, height);
 		ctx.fillStyle = BAND_RGB;
-		ctx.fillRect(tile.x0, tile.y1, width, layout.band);
-		return { index: tile.index, label: drawLabel(ctx, item.label, layout, tile, fontFamily), width, height };
+		ctx.fillRect(tile.x0, tile.y1, width, tile.band);
+		return { index: tile.index, label: drawLabel(ctx, item, layout, tile, fontFamily), width, height };
 	});
 
 	return { ...encode(canvas), tiles };
 }
 
+/**
+ * Draws the number and the name. A name that the font cannot draw leaves only the number, and the tile says so.
+ */
 function drawLabel(
 	ctx: SKRSContext2D,
-	text: string,
+	item: SheetItem,
 	layout: Layout,
-	tile: Layout["tiles"][number],
+	tile: Tile,
 	fontFamily: string | null,
 ): LabelState {
-	if (!canDrawLabel(text, fontFamily !== null)) return "not-drawn";
+	const drawable = canDrawLabel(item.name, fontFamily !== null);
+	const text = drawable ? `${item.number} ${item.name}` : String(item.number);
 	const maxWidth = tile.x1 - tile.x0 - LABEL_PAD;
-	const fitted = fitLabel(text, maxWidth, layout.labelPx, (candidate, px) => {
+	const startPx = Math.min(layout.labelPx, Math.max(MIN_FONT, Math.floor(tile.band / LABEL_LINE)));
+	const fitted = fitLabel(text, maxWidth, startPx, (candidate, px) => {
 		ctx.font = labelFont(px, fontFamily);
 		return ctx.measureText(candidate).width;
 	});
@@ -95,7 +104,8 @@ function drawLabel(
 	ctx.fillStyle = TEXT_RGB;
 	ctx.textAlign = "center";
 	ctx.textBaseline = "middle";
-	ctx.fillText(fitted.text, (tile.x0 + tile.x1) / 2, tile.y1 + layout.band / 2);
+	ctx.fillText(fitted.text, (tile.x0 + tile.x1) / 2, tile.y1 + tile.band / 2);
+	if (!drawable) return "not-drawn";
 	return fitted.truncated ? "cut" : "drawn";
 }
 

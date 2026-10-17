@@ -9,15 +9,26 @@ import { test } from "node:test";
 import { readImages } from "../../src/read-images.ts";
 import { fixtureDir, writeSolidPng } from "../helpers/images.ts";
 
-test("twenty-five images that all have readable labels give two sheets and no text block", async () => {
+test("twenty-five images give two sheets, and the text lists every image by its number", async () => {
 	const dir = fixtureDir("e2e-25");
 	for (let i = 1; i <= 25; i++) writeSolidPng(dir, `shot_${String(i).padStart(2, "0")}.png`, 400, 300, i * 10);
 	const blocks = await readImages([dir]);
 	assert.equal(blocks.filter((b) => b.type === "image").length, 2);
-	assert.equal(
-		blocks.some((b) => b.type === "text"),
-		false,
-	);
+	const text = blocks.at(-1);
+	assert.ok(text?.type === "text");
+	assert.equal(text.text.match(/^ {2}\d+\. /gm)?.length, 25);
+	assert.match(text.text, /^ {2}1\. .*shot_01\.png$/m);
+	assert.match(text.text, /^ {2}25\. .*shot_25\.png$/m);
+});
+
+test("a sheet with a single image has its number on the label, and the text names the file", async () => {
+	const dir = fixtureDir("e2e-one");
+	writeSolidPng(dir, "only.png", 400, 300, 0);
+	const blocks = await readImages([dir]);
+	assert.equal(blocks.filter((b) => b.type === "image").length, 1);
+	const text = blocks.at(-1);
+	assert.ok(text?.type === "text");
+	assert.match(text.text, /^ {2}1\. .*only\.png$/m);
 });
 
 test("the text block, when present, comes after every image", async () => {
@@ -35,7 +46,7 @@ test("the text block, when present, comes after every image", async () => {
 	assert.ok(blocks.slice(0, -1).every((b) => b.type === "image"));
 });
 
-test("a truncated label is listed by position, and readable labels are not", async () => {
+test("a truncated label is marked in the list, and readable labels are listed without a mark", async () => {
 	const dir = fixtureDir("e2e-cut");
 	writeSolidPng(dir, "short.png", 400, 300, 0);
 	writeSolidPng(
@@ -48,11 +59,11 @@ test("a truncated label is listed by position, and readable labels are not", asy
 	const blocks = await readImages([dir]);
 	const text = blocks.at(-1);
 	assert.ok(text?.type === "text");
-	assert.match(text.text, /1\. .*a-very-long.*\(label cut off\)/);
-	assert.doesNotMatch(text.text, /short\.png/);
+	assert.match(text.text, /^ {2}1\. .*a-very-long.*\(label cut off\)$/m);
+	assert.match(text.text, /^ {2}2\. .*short\.png$/m);
 });
 
-test("two files with the same name in different directories are both listed as shared", async () => {
+test("two files with the same name in different directories are both listed with their full paths", async () => {
 	const first = fixtureDir("e2e-shared-a");
 	const second = fixtureDir("e2e-shared-b");
 	const a = writeSolidPng(first, "shot.png", 400, 300, 0);
@@ -60,8 +71,8 @@ test("two files with the same name in different directories are both listed as s
 	const blocks = await readImages([a, b]);
 	const text = blocks.at(-1);
 	assert.ok(text?.type === "text");
-	assert.match(text.text, /1\. .*e2e-shared-a.*shot\.png \(label shared with another file\)/);
-	assert.match(text.text, /2\. .*e2e-shared-b.*shot\.png \(label shared with another file\)/);
+	assert.match(text.text, /^ {2}1\. .*e2e-shared-a.*shot\.png \(label shared with another file\)$/m);
+	assert.match(text.text, /^ {2}2\. .*e2e-shared-b.*shot\.png \(label shared with another file\)$/m);
 });
 
 test("without a CJK font, a Japanese file name is listed but its label is not drawn", async () => {
@@ -158,8 +169,8 @@ test("a shared label is the same on every page, because labels are decided over 
 	assert.ok(text?.type === "text");
 	// Both files are on page 2, so the list must name each file with its real path, not an empty string.
 	// Positions are input positions: the two images are 49 and 50 of 50, not 1 and 2 of the page.
-	assert.match(text.text, / {2}49\. .*e2e-paging-shared-a.*p49\.png \(label shared with another file\)/);
-	assert.match(text.text, / {2}50\. .*e2e-paging-shared-b.*p49\.png \(label shared with another file\)/);
+	assert.match(text.text, /^ {2}49\. .*e2e-paging-shared-a.*p49\.png \(label shared with another file\)$/m);
+	assert.match(text.text, /^ {2}50\. .*e2e-paging-shared-b.*p49\.png \(label shared with another file\)$/m);
 	assert.doesNotMatch(text.text, /\d+\. {2}\(/, "no listed line may lack a path");
 });
 

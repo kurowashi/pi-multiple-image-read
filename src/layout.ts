@@ -1,9 +1,10 @@
 /**
  * Pure sheet layout: where each tile goes on a sheet, with no pixels and no I/O.
  *
- * A sheet is sized so that every tile is shown at full resolution within the image
- * cap. Pi downscales any image whose long edge exceeds 2000 px, which would thin the
- * labels, so a sheet never goes past that.
+ * Tiles are packed as a slice tree: every split cuts a rectangle into two side by side or one above the other.
+ * The search chooses the tree so that the tiles' image areas come out close to equal. A sheet is sized so that
+ * every tile is shown at full resolution within the image cap. Pi downscales any image whose long edge exceeds
+ * 2000 px, which would thin the labels, so a sheet never goes past that.
  */
 
 /** Long edge of a sheet in px. pi resizes any longer image to 2000 px, so a sheet stays at or below it. */
@@ -18,6 +19,14 @@ export const MIN_FONT = 16;
 /** Tiles smaller than this (px, either side) make the reply warn that the images may be hard to read. */
 export const MIN_TILE = 160;
 
+/**
+ * Label band under a tile, as a fraction of the tile's width. A wider tile gets a taller band, so its label
+ * fits at the sheet's font size. Measured on the reference set: 0.08 keeps the area ratio lowest among the values tried.
+ */
+const BAND_RATIO = 0.08;
+/** Gap between neighbouring tiles, as a fraction of the size of the split they sit in. */
+const GAP_RATIO = 0.008;
+
 /** Position and size of one tile. Pixel coordinates; x1 and y1 are exclusive. */
 export interface Tile {
 	/** Index into the aspect and height arrays given to planLayout. */
@@ -26,15 +35,14 @@ export interface Tile {
 	y0: number;
 	x1: number;
 	y1: number;
+	/** Height in px of the label band directly under the tile, starting at y1. */
+	band: number;
 }
 
 export interface Layout {
 	width: number;
 	height: number;
-	gap: number;
-	/** Label band height under each tile row. */
-	band: number;
-	/** Font size for labels on this sheet, before any shrinking to fit. */
+	/** Font size for labels on this sheet, before any shrinking to fit a tile's band or width. */
 	labelPx: number;
 	tiles: Tile[];
 }
@@ -45,42 +53,6 @@ function at<T>(xs: readonly T[], i: number): T {
 	return xs[i] as T;
 }
 
-/** Split indexes 0..n-1 into k contiguous groups, minimising the largest aspect-ratio sum. */
-export function balancedRows(aspects: readonly number[], k: number): number[][] {
-	const n = aspects.length;
-	const prefix: number[] = [0];
-	for (const a of aspects) prefix.push(at(prefix, prefix.length - 1) + a);
-
-	// best[j][i]: smallest possible largest-group sum splitting the first i items into j groups.
-	const best = Array.from({ length: k + 1 }, () => Array.from({ length: n + 1 }, () => Number.POSITIVE_INFINITY));
-	const cut = Array.from({ length: k + 1 }, () => Array.from({ length: n + 1 }, () => 0));
-	at(best, 0)[0] = 0;
-	for (let j = 1; j <= k; j++) {
-		for (let i = j; i <= n; i++) {
-			for (let p = j - 1; p < i; p++) {
-				const v = Math.max(at(at(best, j - 1), p), at(prefix, i) - at(prefix, p));
-				if (v < at(at(best, j), i)) {
-					at(best, j)[i] = v;
-					at(cut, j)[i] = p;
-				}
-			}
-		}
-	}
-
-	const groups: number[][] = [];
-	let end = n;
-	for (let j = k; j > 0; j--) {
-		const start = at(at(cut, j), end);
-		groups.unshift(range(start, end));
-		end = start;
-	}
-	return groups;
-}
-
-function range(from: number, to: number): number[] {
-	return Array.from({ length: to - from }, (_, offset) => from + offset);
-}
-
 /** Whether a sheet of this size is within the budget. */
 export function fits(width: number, height: number): boolean {
 	const cols = Math.ceil(width / PATCH);
@@ -88,85 +60,257 @@ export function fits(width: number, height: number): boolean {
 	return Math.max(cols, rows) * PATCH <= MAX_EDGE && cols * rows <= MAX_PATCHES;
 }
 
-/** Gap, label band, and label font for a sheet of width W. All scale with W. */
-export function metrics(width: number): { gap: number; band: number; labelPx: number } {
-	const labelPx = labelFontPx(width);
-	return { gap: Math.max(6, Math.round(width * 0.008)), band: Math.round(labelPx * 1.6), labelPx };
-}
-
-function labelFontPx(width: number): number {
-	return Math.max(MIN_FONT, Math.round(width * 0.016));
-}
-
-/** Tile rectangles for sheet width W with the given row groups. */
-function geometry(
-	width: number,
-	aspects: readonly number[],
-	groups: readonly (readonly number[])[],
-	band: number,
-	gap: number,
-): { height: number; tiles: Tile[] } {
-	const tiles: Tile[] = [];
-	let y = gap;
-	for (const group of groups) {
-		const aspectSum = group.reduce((sum, i) => sum + at(aspects, i), 0);
-		const rowHeight = (width - gap * (group.length + 1)) / aspectSum;
-		let x = gap;
-		for (const i of group) {
-			const tileWidth = at(aspects, i) * rowHeight;
-			tiles.push({
-				index: i,
-				x0: Math.round(x),
-				y0: Math.round(y),
-				x1: Math.round(x + tileWidth),
-				y1: Math.round(y + rowHeight),
-			});
-			x += tileWidth + gap;
-		}
-		y += rowHeight + band + gap;
-	}
-	return { height: Math.round(y), tiles };
+/** Label font for a sheet of width W. Scales with W. */
+export function metrics(width: number): { labelPx: number } {
+	return { labelPx: Math.max(MIN_FONT, Math.round(width * 0.016)) };
 }
 
 /**
- * Choose the row split and sheet width that show the most image pixels within the budget.
- *
- * A tile never grows taller than its source, so a small image is not upscaled to fill space.
- * Returns null when no layout fits, which happens only for an empty input.
+ * Slice tree over the input indexes. A leaf is an input index; a node splits its rectangle either side by side
+ * ("H") or one above the other ("V").
  */
-export function planLayout(aspects: readonly number[], heights: readonly number[]): Layout | null {
-	let best: (Layout & { area: number }) | null = null;
-	for (let k = 1; k <= aspects.length; k++) {
-		const groups = balancedRows(aspects, k);
-		const ok = (width: number): boolean => {
-			const { gap, band } = metrics(width);
-			const { height, tiles } = geometry(width, aspects, groups, band, gap);
-			if (!fits(width, height)) return false;
-			// Each row's tiles must not be taller than the shortest source image in that row.
-			const rowSourceHeight = new Map<number, number>();
-			for (const t of tiles) {
-				const current = rowSourceHeight.get(t.y0) ?? Number.POSITIVE_INFINITY;
-				rowSourceHeight.set(t.y0, Math.min(current, at(heights, t.index)));
-			}
-			return tiles.every((t) => t.y1 - t.y0 <= (rowSourceHeight.get(t.y0) ?? 0));
-		};
-		// Feasibility is monotone in width, so binary search finds the widest feasible sheet.
-		if (!ok(1)) continue;
-		let lo = 1;
-		let hi = MAX_EDGE;
-		while (lo < hi) {
-			const mid = Math.ceil((lo + hi) / 2);
-			if (ok(mid)) lo = mid;
-			else hi = mid - 1;
-		}
-		const { gap, band, labelPx } = metrics(lo);
-		const { height, tiles } = geometry(lo, aspects, groups, band, gap);
-		const area = tiles.reduce((sum, t) => sum + (t.x1 - t.x0) * (t.y1 - t.y0), 0);
-		if (best === null || area > best.area) {
-			best = { width: lo, height, gap, band, labelPx, tiles, area };
+type Tree = number | { op: "H" | "V"; l: Tree; r: Tree };
+
+/** A tile's rectangle in tree units, where the whole sheet is one unit tall. */
+interface Cell {
+	x: number;
+	y: number;
+	/** Image width and height. The band sits under the image, width-wide, and is not part of these. */
+	w: number;
+	h: number;
+	band: number;
+}
+
+/** Aspect (width / height) of a subtree. A leaf's band is part of its aspect, so the leaf is image plus band. */
+function aspectOf(tree: Tree, aspects: readonly number[]): number {
+	if (typeof tree === "number") {
+		const a = at(aspects, tree);
+		return a / (1 + BAND_RATIO * a);
+	}
+	const l = aspectOf(tree.l, aspects);
+	const r = aspectOf(tree.r, aspects);
+	return tree.op === "H" ? l + r + GAP_RATIO : 1 / (1 / l + 1 / r + GAP_RATIO);
+}
+
+/** Places every leaf, given the rectangle of a subtree. The rectangle's aspect must be the subtree's own. */
+function place(tree: Tree, aspects: readonly number[], x: number, y: number, w: number, h: number, out: Cell[]): void {
+	if (typeof tree === "number") {
+		const a = at(aspects, tree);
+		const imageH = w / a;
+		out[tree] = { x, y, w, h: imageH, band: BAND_RATIO * w };
+		return;
+	}
+	const l = aspectOf(tree.l, aspects);
+	if (tree.op === "H") {
+		const lw = l * h;
+		place(tree.l, aspects, x, y, lw, h, out);
+		place(tree.r, aspects, x + lw + GAP_RATIO * h, y, w - lw - GAP_RATIO * h, h, out);
+	} else {
+		const lh = w / l;
+		place(tree.l, aspects, x, y, w, lh, out);
+		place(tree.r, aspects, x, y + lh + GAP_RATIO * w, w, h - lh - GAP_RATIO * w, out);
+	}
+}
+
+/** Cells for a tree, in tree units. The root rectangle is aspectOf(tree) wide and one unit tall. */
+function cellsOf(tree: Tree, aspects: readonly number[]): { aspect: number; cells: Cell[] } {
+	const aspect = aspectOf(tree, aspects);
+	const cells: Cell[] = [];
+	place(tree, aspects, 0, 0, aspect, 1, cells);
+	return { aspect, cells };
+}
+
+/**
+ * Largest scale s (px per tree unit) at which the sheet fits the budget. The sheet is aspect x 1 units,
+ * so its px size is (s * aspect) x s.
+ */
+function budgetScale(aspect: number): number {
+	let lo = 1;
+	let hi = 2 * MAX_EDGE;
+	for (let k = 0; k < 40; k++) {
+		const mid = (lo + hi) / 2;
+		if (fits(Math.round(mid * aspect), Math.round(mid))) lo = mid;
+		else hi = mid;
+	}
+	return lo;
+}
+
+/** Largest scale at which no tile is taller than its source image. */
+function sourceScale(cells: readonly Cell[], heights: readonly number[]): number {
+	let s = Number.POSITIVE_INFINITY;
+	cells.forEach((cell, i) => {
+		s = Math.min(s, at(heights, i) / cell.h);
+	});
+	return s;
+}
+
+/** Ratio of the largest to the smallest image area (tree units, so scale-free). Lower is more even. */
+function areaSpread(cells: readonly Cell[]): number {
+	let lo = Number.POSITIVE_INFINITY;
+	let hi = 0;
+	for (const cell of cells) {
+		const area = cell.w * cell.h;
+		lo = Math.min(lo, area);
+		hi = Math.max(hi, area);
+	}
+	return hi / lo;
+}
+
+/**
+ * How much the search rewards large tiles against even ones. Without the size term, the search can make a thin
+ * column of tiles, which is as even as a grid but leaves each image tiny. Measured on the reference set: 0.5 gives
+ * an area spread of 1.45, and 1 gives 2.12 for the same sheets.
+ */
+const SIZE_WEIGHT = 0.5;
+
+/** Search cost, lower is better: image areas as even as possible, and the mean tile as large as possible in px. */
+function cost(tree: Tree, aspects: readonly number[], heights: readonly number[]): number {
+	const { aspect, cells } = cellsOf(tree, aspects);
+	const scale = Math.min(budgetScale(aspect), sourceScale(cells, heights));
+	const meanArea = cells.reduce((sum, c) => sum + c.w * c.h, 0) / cells.length;
+	const px = scale * scale * meanArea;
+	return Math.log(areaSpread(cells)) - SIZE_WEIGHT * Math.log(px);
+}
+
+/** A seeded linear congruential generator, so the same input always gives the same layout. */
+function generator(seed: number): () => number {
+	let state = seed >>> 0;
+	return () => {
+		state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+		return state / 4294967296;
+	};
+}
+
+function leavesOf(tree: Tree, out: number[] = []): number[] {
+	if (typeof tree === "number") out.push(tree);
+	else {
+		leavesOf(tree.l, out);
+		leavesOf(tree.r, out);
+	}
+	return out;
+}
+
+function countNodes(tree: Tree): number {
+	return typeof tree === "number" ? 1 : 1 + countNodes(tree.l) + countNodes(tree.r);
+}
+
+/** The tree without leaf `x`. Its parent is replaced by the sibling. */
+function without(tree: Tree, x: number): Tree | null {
+	if (typeof tree === "number") return tree === x ? null : tree;
+	const l = without(tree.l, x);
+	const r = without(tree.r, x);
+	if (l === null) return r;
+	if (r === null) return l;
+	return { op: tree.op, l, r };
+}
+
+/** Insert leaf `x` beside the node numbered `k` in pre-order, as a new split with the given operator. */
+function insertBeside(tree: Tree, k: number, x: number, op: "H" | "V", left: boolean): Tree {
+	let seen = 0;
+	const go = (node: Tree): Tree => {
+		if (seen++ === k) return left ? { op, l: x, r: node } : { op, l: node, r: x };
+		if (typeof node === "number") return node;
+		return { op: node.op, l: go(node.l), r: go(node.r) };
+	};
+	return go(tree);
+}
+
+/** Flip the operator of the internal node numbered `k` in pre-order. */
+function flipAt(tree: Tree, k: number): Tree {
+	let seen = 0;
+	const go = (node: Tree): Tree => {
+		if (typeof node === "number") return node;
+		const mine = seen++;
+		const l = go(node.l);
+		const r = go(node.r);
+		return { op: mine === k ? (node.op === "H" ? "V" : "H") : node.op, l, r };
+	};
+	return go(tree);
+}
+
+/** A random tree over the given indexes: repeatedly join two random pieces. */
+function randomTree(indexes: readonly number[], rand: () => number): Tree {
+	const pieces: Tree[] = [...indexes];
+	while (pieces.length > 1) {
+		const a = pieces.splice(Math.floor(rand() * pieces.length), 1)[0] as Tree;
+		const b = pieces.splice(Math.floor(rand() * pieces.length), 1)[0] as Tree;
+		pieces.push({ op: rand() < 0.5 ? "H" : "V", l: a, r: b });
+	}
+	return at(pieces, 0);
+}
+
+const SEARCH_RESTARTS = 6;
+const SEARCH_STEPS = 40_000;
+
+/** A neighbour of a tree: move one leaf elsewhere (most of the time), or flip one split. Null if none applies. */
+function neighbour(tree: Tree, rand: () => number): Tree | null {
+	const leaves = leavesOf(tree);
+	if (rand() < 0.8) {
+		const x = at(leaves, Math.floor(rand() * leaves.length));
+		const pruned = without(tree, x);
+		if (pruned === null) return null;
+		const k = Math.floor(rand() * countNodes(pruned));
+		return insertBeside(pruned, k, x, rand() < 0.5 ? "H" : "V", rand() < 0.5);
+	}
+	const internal = countNodes(tree) - leaves.length;
+	return internal === 0 ? null : flipAt(tree, Math.floor(rand() * internal));
+}
+
+/** One annealing run from a random tree. Returns the best tree it visited. */
+function anneal(aspects: readonly number[], heights: readonly number[], seed: number): { tree: Tree; cost: number } {
+	const rand = generator(seed);
+	let current = randomTree(
+		aspects.map((_, i) => i),
+		rand,
+	);
+	let currentCost = cost(current, aspects, heights);
+	let best = { tree: current, cost: currentCost };
+	for (let step = 0; step < SEARCH_STEPS; step++) {
+		const candidate = neighbour(current, rand);
+		if (candidate === null) continue;
+		const candidateCost = cost(candidate, aspects, heights);
+		const temperature = 0.05 * (0.001 / 0.05) ** (step / SEARCH_STEPS);
+		if (candidateCost < currentCost || rand() < Math.exp((currentCost - candidateCost) / temperature)) {
+			current = candidate;
+			currentCost = candidateCost;
+			if (currentCost < best.cost) best = { tree: current, cost: currentCost };
 		}
 	}
-	if (best === null) return null;
-	const { area: _area, ...layout } = best;
-	return layout;
+	return best;
+}
+
+/** Best slice tree over several fixed-seed runs. Fixed seeds keep the result deterministic. */
+function searchTree(aspects: readonly number[], heights: readonly number[]): Tree {
+	let best: { tree: Tree; cost: number } | null = null;
+	for (let restart = 1; restart <= SEARCH_RESTARTS; restart++) {
+		const run = anneal(aspects, heights, restart);
+		if (best === null || run.cost < best.cost) best = run;
+	}
+	if (best === null) throw new Error("no search run");
+	return best.tree;
+}
+
+/**
+ * Choose the slice tree and the sheet scale that show the most image pixels within the budget, with the image
+ * areas as even as the search can make them.
+ *
+ * A tile never grows taller than its source, so a small image is not upscaled to fill space.
+ * Returns null when there are no tiles.
+ */
+export function planLayout(aspects: readonly number[], heights: readonly number[]): Layout | null {
+	if (aspects.length === 0) return null;
+	const tree = aspects.length === 1 ? 0 : searchTree(aspects, heights);
+	const { aspect, cells } = cellsOf(tree, aspects);
+	const scale = Math.min(budgetScale(aspect), sourceScale(cells, heights));
+	const width = Math.round(scale * aspect);
+	const height = Math.round(scale);
+	const tiles: Tile[] = cells.map((cell, index) => {
+		const x0 = Math.round(cell.x * scale);
+		const y0 = Math.round(cell.y * scale);
+		const x1 = Math.round((cell.x + cell.w) * scale);
+		const y1 = Math.round((cell.y + cell.h) * scale);
+		const bandBottom = Math.round((cell.y + cell.h + cell.band) * scale);
+		return { index, x0, y0, x1, y1, band: bandBottom - y1 };
+	});
+	return { width, height, labelPx: metrics(width).labelPx, tiles };
 }

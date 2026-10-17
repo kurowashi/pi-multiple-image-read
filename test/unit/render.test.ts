@@ -36,8 +36,8 @@ test("b64Length matches base64 output for every remainder", () => {
 test("a sheet is PNG when it fits the inline limit", async () => {
 	const dir = fixtureDir("render-png");
 	const items = [
-		{ label: "a", image: await load(writeSolidPng(dir, "a.png", 300, 200, 10)) },
-		{ label: "b", image: await load(writeSolidPng(dir, "b.png", 200, 300, 200)) },
+		{ number: 1, name: "a", image: await load(writeSolidPng(dir, "a.png", 300, 200, 10)) },
+		{ number: 2, name: "b", image: await load(writeSolidPng(dir, "b.png", 200, 300, 200)) },
 	];
 	const sheet = composeSheet(items, null);
 	assert.equal(sheet.mimeType, "image/png");
@@ -54,7 +54,7 @@ test("a sheet built from noisy images stays under the inline limit", async () =>
 	const dir = fixtureDir("render-noise");
 	const items = [];
 	for (let i = 0; i < 12; i++) {
-		items.push({ label: `n${i}`, image: await load(writeNoisePng(dir, `n${i}.png`, 700, 700, i + 3)) });
+		items.push({ number: i + 1, name: `n${i}`, image: await load(writeNoisePng(dir, `n${i}.png`, 700, 700, i + 3)) });
 	}
 	const sheet = composeSheet(items, null);
 	assert.ok(b64Length(Buffer.from(sheet.data, "base64").length) <= INLINE_B64_MAX);
@@ -63,8 +63,8 @@ test("a sheet built from noisy images stays under the inline limit", async () =>
 test("every tile reports its size and that its label was drawn", async () => {
 	const dir = fixtureDir("render-tiles");
 	const items = [
-		{ label: "wide", image: await load(writeSolidPng(dir, "wide.png", 800, 200, 40)) },
-		{ label: "tall", image: await load(writeSolidPng(dir, "tall.png", 200, 800, 120)) },
+		{ number: 1, name: "wide", image: await load(writeSolidPng(dir, "wide.png", 800, 200, 40)) },
+		{ number: 2, name: "tall", image: await load(writeSolidPng(dir, "tall.png", 200, 800, 120)) },
 	];
 	const sheet = composeSheet(items, null);
 	assert.equal(sheet.tiles.length, 2);
@@ -76,7 +76,7 @@ test("every tile reports its size and that its label was drawn", async () => {
 
 test("non-ASCII labels are not drawn without a CJK font, and the tile says so", async () => {
 	const dir = fixtureDir("render-no-cjk");
-	const items = [{ label: "写真", image: await load(writeSolidPng(dir, "jp.png", 300, 300, 10)) }];
+	const items = [{ number: 1, name: "写真", image: await load(writeSolidPng(dir, "jp.png", 300, 300, 10)) }];
 	const sheet = composeSheet(items, null);
 	assert.equal(sheet.tiles[0]?.label, "not-drawn");
 });

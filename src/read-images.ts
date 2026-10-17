@@ -24,17 +24,17 @@ export type ContentBlock =
 /** Images per call. A call returns at most this many; `offset` reads the next page. */
 const PAGE_SIZE = 48;
 
-/** A position on the sheets, the file behind it, and how its label fared. */
+/** An image on the sheets: its number, the file behind it, and how its label fared. */
 interface Placed {
-	position: number;
+	number: number;
 	path: string;
 	label: LabelState;
 	shared: boolean;
 }
 
 /**
- * Returns one image block per sheet, then a text block only when something needs a line: a label that cannot
- * identify its image, a file that was skipped or unreadable, or more images than this page holds.
+ * Returns one image block per sheet, then one text block that maps each number to its path. The text is always
+ * there, because a label can be cut off, and because the sheet does not show the input order.
  */
 export async function readImages(
 	inputs: readonly string[],
@@ -45,8 +45,8 @@ export async function readImages(
 	if (offset >= total) throw new Error(`offset ${offset} is past the last image (${total} found)`);
 	const end = Math.min(offset + PAGE_SIZE, total);
 	// Labels come from every input, so a page's labels do not depend on which page it is.
-	const labels = tileLabels(expanded.paths);
-	const page = await composePage(expanded.paths.slice(offset, end), offset, labels, fontFamily);
+	const names = tileLabels(expanded.paths);
+	const page = await composePage(expanded.paths.slice(offset, end), offset, names, fontFamily);
 
 	const range = pageRange(offset, end, total);
 	if (page.sheets.length === 0 && range === "") {
@@ -77,14 +77,14 @@ interface Page {
 	unreadable: Skipped[];
 }
 
-/** Decodes and packs one page, a sheet at a time. Positions are input positions across all pages. */
+/** Decodes and packs one page, a sheet at a time. Numbers are input positions across all pages. */
 async function composePage(
 	paths: readonly string[],
 	offset: number,
-	labels: readonly string[],
+	names: readonly string[],
 	fontFamily: string | null,
 ): Promise<Page> {
-	const labelCount = countLabels(labels);
+	const nameCount = countNames(names);
 	const page: Page = { sheets: [], placed: [], unreadable: [] };
 	for (let start = 0; start < paths.length; start += PER_SHEET) {
 		const chunk = paths.slice(start, start + PER_SHEET);
@@ -95,7 +95,7 @@ async function composePage(
 		decoded.forEach((result, i) => {
 			const index = offset + start + i;
 			if (result.ok) {
-				items.push({ label: labelAt(labels, index), image: result.image });
+				items.push({ number: index + 1, name: nameAt(names, index), image: result.image });
 				members.push(index);
 			} else {
 				page.unreadable.push({ path: chunk[i] ?? "", reason: result.reason });
@@ -105,24 +105,24 @@ async function composePage(
 
 		const sheet = composeSheet(items, fontFamily);
 		page.sheets.push(sheet);
-		// Positions follow the reading order on the sheet, which is the order of the items.
-		for (const tile of [...sheet.tiles].sort((x, y) => x.index - y.index)) {
+		for (const tile of sheet.tiles) {
 			const index = members[tile.index];
 			if (index === undefined) throw new RangeError(`no member for tile ${tile.index}`);
 			page.placed.push({
-				position: offset + page.placed.length + 1,
-				path: labelPath(paths, offset, index),
+				number: index + 1,
+				path: pathAt(paths, index - offset),
 				label: tile.label,
-				shared: (labelCount.get(labelAt(labels, index)) ?? 0) > 1,
+				shared: (nameCount.get(nameAt(names, index)) ?? 0) > 1,
 			});
 		}
 	}
+	page.placed.sort((x, y) => x.number - y.number);
 	return page;
 }
 
-function labelPath(paths: readonly string[], offset: number, index: number): string {
-	const path = paths[index - offset];
-	if (path === undefined) throw new RangeError(`no path for position ${index}`);
+function pathAt(paths: readonly string[], i: number): string {
+	const path = paths[i];
+	if (path === undefined) throw new RangeError(`no path at ${i}`);
 	return path;
 }
 
@@ -137,25 +137,26 @@ interface Description {
 	range: string;
 }
 
-/** The text block: notes, and a line for each image whose name the label cannot give. Empty when none applies. */
+/**
+ * The text block: notes, then every image as `number. path`. The number is drawn before the name on each label.
+ * A label that was cut, not drawn, or shared is marked on its line.
+ */
 function describe(d: Description): string {
 	const notes: string[] = [];
 	if (d.fontFamily === null && d.tiles.some((tile) => tile.label === "not-drawn")) {
-		notes.push("No Japanese-capable font is installed, so labels with non-ASCII characters are left off the sheets.");
+		notes.push("No Japanese-capable font is installed, so names with non-ASCII characters are left off the labels.");
 	}
 	if (anyTileTooSmall(d.tiles)) {
 		notes.push(
 			`Some tiles are under ${MIN_TILE} px; the images may be hard to read. Open the full-size file for fine detail.`,
 		);
 	}
-	const listed = d.placed
-		.filter((p) => p.label !== "drawn" || p.shared)
-		.map((p) => `  ${p.position}. ${p.path}${annotate(p.label, p.shared)}`);
+	const listed = d.placed.map((p) => `  ${p.number}. ${p.path}${annotate(p.label, p.shared)}`);
 	for (const skip of d.skipped) listed.push(`  skipped: ${skip.path} (${skip.reason})`);
 	for (const bad of d.unreadable) listed.push(`  skipped: ${bad.path} (${bad.reason})`);
 
 	if (listed.length === 0 && d.range === "") return notes.join("\n");
-	const summary = `${d.placed.length} image(s) on ${d.sheetCount} sheet(s); positions run in input order, left to right, top to bottom.`;
+	const summary = `${d.placed.length} image(s) on ${d.sheetCount} sheet(s). Each label shows its number, then the file name.`;
 	return [...notes, ...(d.range === "" ? [] : [d.range]), summary, ...listed].join("\n");
 }
 
@@ -169,9 +170,9 @@ function pageRange(offset: number, end: number, total: number): string {
 	return end < total ? `${shown} For the rest, call again with offset ${end}.` : shown;
 }
 
-function countLabels(labels: readonly string[]): Map<string, number> {
+function countNames(names: readonly string[]): Map<string, number> {
 	const counts = new Map<string, number>();
-	for (const label of labels) counts.set(label, (counts.get(label) ?? 0) + 1);
+	for (const name of names) counts.set(name, (counts.get(name) ?? 0) + 1);
 	return counts;
 }
 
@@ -181,10 +182,10 @@ function annotate(label: LabelState, shared: boolean): string {
 	return shared ? " (label shared with another file)" : "";
 }
 
-function labelAt(labels: readonly string[], i: number): string {
-	const label = labels[i];
-	if (label === undefined) throw new RangeError(`no label for position ${i}`);
-	return label;
+function nameAt(names: readonly string[], i: number): string {
+	const name = names[i];
+	if (name === undefined) throw new RangeError(`no name for position ${i}`);
+	return name;
 }
 
 type Decoded = { ok: true; image: Image } | { ok: false; reason: string };

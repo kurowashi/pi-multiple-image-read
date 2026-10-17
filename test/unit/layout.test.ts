@@ -5,7 +5,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-	balancedRows,
 	fits,
 	MAX_EDGE,
 	MAX_PATCHES,
@@ -28,19 +27,14 @@ function overlaps(a: Tile, b: Tile): boolean {
 	return a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
 }
 
-test("balancedRows keeps groups contiguous and covers every index once", () => {
-	const groups = balancedRows([1, 2, 3, 4, 5, 6], 3);
-	assert.deepEqual(groups.flat(), [0, 1, 2, 3, 4, 5]);
-	assert.equal(groups.length, 3);
-});
+/** Image area ratio between the largest and the smallest tile. */
+function areaRatio(tiles: readonly Tile[]): number {
+	const areas = tiles.map((t) => (t.x1 - t.x0) * (t.y1 - t.y0));
+	return Math.max(...areas) / Math.min(...areas);
+}
 
-test("balancedRows minimises the largest row sum", () => {
-	// Ideal split of [4,4,1,1,4,4] into 2 rows is [4,4,1] [1,4,4] with sums 9 and 9.
-	const groups = balancedRows([4, 4, 1, 1, 4, 4], 2);
-	const weights = [4, 4, 1, 1, 4, 4];
-	const sums = groups.map((g) => g.reduce((s, i) => s + at(weights, i), 0));
-	assert.ok(Math.max(...sums) <= 9, `largest row sum was ${Math.max(...sums)}`);
-});
+/** Aspect ratios (width / height) of the seven reference images in the sample set. */
+const REFERENCE_ASPECTS = [1.5, 1.5, 0.565, 0.433, 0.75, 0.563, 0.684];
 
 test("fits enforces both the long-edge cap and the patch cap", () => {
 	const longest = Math.floor(MAX_EDGE / PATCH) * PATCH;
@@ -81,22 +75,30 @@ test("a sheet never exceeds the budget, for varied aspect ratios", () => {
 	}
 });
 
-test("every tile lies inside the sheet and no two tiles overlap", () => {
+test("every tile and its label band lie inside the sheet, and no two tiles overlap", () => {
 	const aspects = [1.5, 0.66, 2, 1, 0.5, 1.78];
 	const layout = planLayout(aspects, [800, 1200, 500, 900, 1000, 600]);
 	assert.ok(layout);
 	const tiles = layout.tiles;
 	for (const t of tiles) {
 		assert.ok(
-			t.x0 >= 0 && t.y0 >= 0 && t.x1 <= layout.width && t.y1 <= layout.height,
-			"tile must lie inside the sheet",
+			t.x0 >= 0 && t.y0 >= 0 && t.x1 <= layout.width && t.y1 + t.band <= layout.height,
+			"tile and band must lie inside the sheet",
 		);
+		assert.ok(t.band > 0, "every tile has a label band");
 	}
 	for (let i = 0; i < tiles.length; i++) {
 		for (let j = i + 1; j < tiles.length; j++) {
 			assert.ok(!overlaps(at(tiles, i), at(tiles, j)), `tiles ${i} and ${j} must not overlap`);
 		}
 	}
+});
+
+test("the sheet fills its budget: no tile row leaves a band of empty space at the bottom", () => {
+	const layout = planLayout([1, 1], [1000, 1000]);
+	assert.ok(layout);
+	const lowest = Math.max(...layout.tiles.map((t) => t.y1 + t.band));
+	assert.ok(layout.height - lowest <= 1, `${layout.height - lowest} px of the sheet is unused below the tiles`);
 });
 
 test("every input index is placed exactly once", () => {
@@ -110,7 +112,7 @@ test("every input index is placed exactly once", () => {
 });
 
 test("a tile is never taller than its source image", () => {
-	// A tiny image next to a huge one must not be stretched to match the huge one's row height.
+	// A tiny image next to a huge one must not be stretched to match the huge one's size.
 	const layout = planLayout([1, 1], [40, 4000]);
 	assert.ok(layout);
 	for (const tile of layout.tiles) {
@@ -119,12 +121,54 @@ test("a tile is never taller than its source image", () => {
 	}
 });
 
-test("label band and font scale with the sheet width, and the font never drops below the minimum", () => {
+test("each tile keeps its aspect ratio, to the pixel", () => {
+	const aspects = [1.5, 0.5, 0.75, 1.78];
+	const layout = planLayout(aspects, [900, 900, 900, 900]);
+	assert.ok(layout);
+	for (const tile of layout.tiles) {
+		const w = tile.x1 - tile.x0;
+		const h = tile.y1 - tile.y0;
+		const want = at(aspects, tile.index);
+		assert.ok(Math.abs(w / h - want) / want < 0.02, `tile ${tile.index} is ${w}x${h}, want aspect ${want}`);
+	}
+});
+
+test("tile areas are close to equal for the reference aspect ratios", () => {
+	const layout = planLayout(
+		REFERENCE_ASPECTS,
+		REFERENCE_ASPECTS.map(() => 1000),
+	);
+	assert.ok(layout);
+	// The first row-based layout gave 3.6; the slice layout measured 1.4 to 2.0 across seeds.
+	assert.ok(areaRatio(layout.tiles) <= 2.1, `area ratio ${areaRatio(layout.tiles).toFixed(2)} is above 2.1`);
+});
+
+test("the same input gives the same layout every time", () => {
+	const first = planLayout(
+		REFERENCE_ASPECTS,
+		REFERENCE_ASPECTS.map(() => 1000),
+	);
+	const second = planLayout(
+		REFERENCE_ASPECTS,
+		REFERENCE_ASPECTS.map(() => 1000),
+	);
+	assert.deepEqual(first, second);
+});
+
+test("label font scales with the sheet width, and never drops below the minimum", () => {
 	const small = metrics(200);
 	const large = metrics(1500);
 	assert.ok(large.labelPx > small.labelPx);
 	assert.equal(small.labelPx, 16, "the minimum label font applies at small widths");
-	assert.ok(large.band > small.band);
+});
+
+test("a wider tile gets a taller label band", () => {
+	const layout = planLayout([3, 0.4], [600, 600]);
+	assert.ok(layout);
+	const wide = layout.tiles.find((t) => t.index === 0);
+	const tall = layout.tiles.find((t) => t.index === 1);
+	assert.ok(wide && tall);
+	assert.ok(wide.band > tall.band, `band ${wide.band} should exceed ${tall.band}`);
 });
 
 test("an empty input has no layout", () => {
