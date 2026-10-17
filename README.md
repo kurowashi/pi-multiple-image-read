@@ -9,6 +9,17 @@ read_images(paths: ["/tmp/shots/"])
   → 返答テキストが、ラベルの番号と元のパスの対応を全件示す
 ```
 
+## インストール
+
+```bash
+pi install git:github.com/kurowashi/pi-multiple-image-read
+```
+
+バージョンを固定する場合は `pi install git:github.com/kurowashi/pi-multiple-image-read@<tag|commit>` を使います。
+ローカルの作業コピーを使う場合は `pi install /path/to/pi-multiple-image-read` を使います。
+
+動作確認は Pi 1.0.3 と Node.js 22.19 以上で行っています。
+
 ## 使い方
 
 モデルは複数の画像を見せるとき `read_images` を呼びます。手動で頼む場合は、次のように書きます。
@@ -17,28 +28,26 @@ read_images(paths: ["/tmp/shots/"])
 /tmp/shots/ の画像を read_images で全部見て
 ```
 
-## インストール
+## コマンド
 
-```bash
-pi install /path/to/pi-multiple-image-read
-```
+コマンドは登録しません。モデル向けのツール `read_images` を登録します。
 
-開発とテストは Pi 1.0.3 と Node.js 22.19 以上で行っています。
+## 仕組み
 
-## ツールの仕様
+### ツールの仕様
 
 | 項目 | 内容 |
 |---|---|
 | ツール名 | `read_images` |
 | 引数 | `paths`（文字列の配列、1件以上）。ファイル、ディレクトリ、glob（正規表現ではない）を混ぜて指定できる。全形式を拾うにはディレクトリか `dir/*` を使う（`*.png` は PNG だけになる）。`offset`（省略可、既定 0）は先頭から飛ばす枚数 |
 | 対応形式 | PNG / JPEG / WebP / BMP / GIF（GIF は先頭フレーム）。TIFF は対象外 |
-| 1回の上限 | 48枚。超える分は `offset` で次の呼び出しに回す。返答に「Showing inputs 1-48 of 130. For the rest, call again with offset 48.」と出る
+| 1回の上限 | 48枚。超える分は `offset` で次の呼び出しに回す。返答に「Showing inputs 1-48 of 130. For the rest, call again with offset 48.」と出る |
 | 1シートの枚数 | 最大24枚。25枚目以降は次のシートになる |
 | シートの大きさ | 長辺 2000 px 以下、画像トークン 4784 以下（Pi の画像上限に収まる）。枚数に応じて配置を変える |
 | 番号 | 入力順の1始まりの通し番号。ディレクトリと glob の中は自然順（`img2` は `img10` より前）。シート上の配置は入力順と一致しません |
 | ラベル | `[番号] ファイル名`（拡張子を除く）。同じ名前が複数あるときは拡張子付きの完全なファイル名 |
 
-### 返答テキスト
+#### 返答テキスト
 
 返答テキストには、全画像の番号とパスを番号順に載せます。ラベルが切れても、番号で元のファイルを特定できます。
 
@@ -49,19 +58,18 @@ pi install /path/to/pi-multiple-image-read
   13. /tmp/shots/other/shot_13.png (label shared with another file)
 ```
 
-- 番号は入力順の通し番号です。ラベルの先頭に、角括弧で囲んで同じ番号を描きます（[ADR 0009](docs/adr/0009-bracketed-label-number.md)）。
+- 番号は入力順の通し番号です。ラベルの先頭に、角括弧で囲んで同じ番号を描きます。
 - `(label cut off)`: ラベルが長すぎて、中央を `…` で省いた（先頭と末尾は残す）。
 - `(label not drawn)`: 日本語の名前を描けなかった（後述）。番号は描かれています。
 - `(label shared with another file)`: 同じ名前のファイルが別のディレクトリにあり、ラベルで区別できない。
 - `skipped: <path> (<reason>)`: 読めなかった、または対応外の形式のファイル。残りの画像は返ります。
-- 判断の経緯は [docs/adr/0008](docs/adr/0008-numbered-labels-slice-layout.md) にあります。
 
-### タイルの大きさに関する注意
+#### タイルの大きさに関する注意
 
 1シートに24枚を並べるため、1枚のタイルは小さくなります。細部（小さな文字、指先、ファイルの欠陥など）は見えないことがあります。
 タイルが 160 px 未満のときは、返答に注意が付きます。細部が必要なら、元のファイルを `read` で開いてください。
 
-### 日本語のラベル
+#### 日本語のラベル
 
 ラベルには、システムにインストールされた日本語フォントを使います。候補の優先順は次のとおりです。
 
@@ -76,7 +84,7 @@ pi install /path/to/pi-multiple-image-read
 日本語のラベルを描くには、Noto Sans CJK JP などのフォントをインストールしてください。
 なお、macOS と Windows の候補名は、この開発環境では確認していません。
 
-## 失敗の例
+### 失敗の例
 
 失敗すると、原因を示すエラーがツール結果として返ります。セッションは続きます。
 
@@ -90,11 +98,13 @@ pi install /path/to/pi-multiple-image-read
 | TIFF（ディレクトリ・glob 内） | 返答に `skipped: /tmp/x/scan.tif (unsupported image type)` |
 | glob が一致しない・存在しない・画像のないディレクトリ | 返答に `skipped: /tmp/none/*.jpg (no image matches (globs are not regular expressions; pass a directory))` / `(not found)` / `(no images in directory)` と出て、残りは返る |
 
-## 開発
+## 制限
 
-```bash
-npm install
-npm run verify   # check, knip, test, coverage
-```
+- TIFF は対象外です。GIF は先頭フレームだけを使います。
+- 1回の呼び出しで読むのは最大48枚です。残りは `offset` で続けて呼びます。
+- タイルは小さくなるため、細部が見えないことがあります（[タイルの大きさに関する注意](#タイルの大きさに関する注意)）。
+- 日本語のラベルは、フォントが無いと描かれません（[日本語のラベル](#日本語のラベル)）。
 
-設計は [DESIGN.md](DESIGN.md)、制約と変更手順は [AGENTS.md](AGENTS.md)、判断の記録は [docs/adr/](docs/adr/) にあります。
+## ライセンス
+
+[MIT](LICENSE)
