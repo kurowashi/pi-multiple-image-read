@@ -156,7 +156,7 @@ function describe(d: Description): string {
 	for (const bad of d.unreadable) listed.push(`  skipped: ${bad.path} (${bad.reason})`);
 
 	if (listed.length === 0 && d.range === "") return notes.join("\n");
-	const summary = `${d.placed.length} image(s) on ${d.sheetCount} sheet(s). Each label shows its number, then the file name.`;
+	const summary = `${d.placed.length} image(s) on ${d.sheetCount} sheet(s). Each label starts with its number in brackets, then the file name.`;
 	return [...notes, ...(d.range === "" ? [] : [d.range]), summary, ...listed].join("\n");
 }
 

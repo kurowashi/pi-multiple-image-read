@@ -18,7 +18,7 @@
 - 返答テキストは、画像ブロックの後ろに1つだけ置く。全画像の `番号. パス` を番号順に載せる。切れた・描けない・同名で共有されている画像は、行末に `(label cut off)` / `(label not drawn)` / `(label shared with another file)` のいずれかを付ける。スキップしたファイルは `skipped: <path> (<reason>)` で載せる（`test/integration/read-images.test.ts`）。変更は [ADR 0008](docs/adr/0008-numbered-labels-slice-layout.md) を先に読む。
 - 160 px 未満のタイルがあれば注意の注記を出す（`MIN_TILE`、`test/unit/render.test.ts`、`test/integration/read-images.test.ts`）。
 - 日本語フォントは `src/font.ts` の候補から、システムにある最初のものを使う。見つからなければ非 ASCII のラベルは描かず、注記を出す（`test/unit/labels.test.ts`、`test/integration/read-images.test.ts`）。
-- ラベルは `番号 ファイル名` で描く。ファイル名が長すぎるときは、先頭と末尾を残して中央を `…` で省く。連番は末尾に出るため（`test/unit/labels.test.ts`）。
+- ラベルは `[番号] ファイル名` で描く（[ADR 0009](docs/adr/0009-bracketed-label-number.md)）。番号を角括弧で囲むのは、名前が数字で始まっても区切りが見えるため（`test/unit/labels.test.ts`）。ファイル名が長すぎるときは、先頭と末尾を残して中央を `…` で省く。連番は末尾に出るため（`test/unit/labels.test.ts`）。
 - 配置は、各画像の面積が揃い、かつタイルが大きくなるように選ぶ（`test/unit/layout.test.ts`）。探索は固定シードで、同じ入力に同じ配置を返す。
 - ファイルシステム API は `node:fs` を読み取りに使う。`src` が使える node builtin は `node:fs` / `node:os` / `node:path` だけ（`test/contract/dependencies.test.ts`）。
 - 実行時依存は `@napi-rs/canvas` の1つだけで、バージョンは固定する。ビルド工程を持たない（`test/contract/dependencies.test.ts`）。

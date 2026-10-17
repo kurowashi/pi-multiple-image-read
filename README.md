@@ -36,20 +36,20 @@ pi install /path/to/pi-multiple-image-read
 | 1シートの枚数 | 最大24枚。25枚目以降は次のシートになる |
 | シートの大きさ | 長辺 2000 px 以下、画像トークン 4784 以下（Pi の画像上限に収まる）。枚数に応じて配置を変える |
 | 番号 | 入力順の1始まりの通し番号。ディレクトリと glob の中は自然順（`img2` は `img10` より前）。シート上の配置は入力順と一致しません |
-| ラベル | 番号とファイル名（拡張子を除く）。同じ名前が複数あるときは拡張子付きの完全なファイル名 |
+| ラベル | `[番号] ファイル名`（拡張子を除く）。同じ名前が複数あるときは拡張子付きの完全なファイル名 |
 
 ### 返答テキスト
 
 返答テキストには、全画像の番号とパスを番号順に載せます。ラベルが切れても、番号で元のファイルを特定できます。
 
 ```
-13 image(s) on 2 sheet(s). Each label shows its number, then the file name.
+13 image(s) on 2 sheet(s). Each label starts with its number in brackets, then the file name.
   1. /tmp/shots/a-very-long-name.png (label cut off)
   6. /tmp/shots/b.png
   13. /tmp/shots/other/shot_13.png (label shared with another file)
 ```
 
-- 番号は入力順の通し番号です。ラベルの先頭に同じ番号を描きます。
+- 番号は入力順の通し番号です。ラベルの先頭に、角括弧で囲んで同じ番号を描きます（[ADR 0009](docs/adr/0009-bracketed-label-number.md)）。
 - `(label cut off)`: ラベルが長すぎて、中央を `…` で省いた（先頭と末尾は残す）。
 - `(label not drawn)`: 日本語の名前を描けなかった（後述）。番号は描かれています。
 - `(label shared with another file)`: 同じ名前のファイルが別のディレクトリにあり、ラベルで区別できない。

@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { canDrawLabel, fitLabel, tileLabels } from "../../src/labels.ts";
+import { canDrawLabel, fitLabel, labelText, tileLabels } from "../../src/labels.ts";
 import { MIN_FONT } from "../../src/layout.ts";
 
 /** Measure text as 0.6 em per character. Deterministic and independent of any font. */
@@ -68,4 +68,14 @@ test("ASCII labels are always drawable", () => {
 test("non-ASCII labels need a CJK-capable font", () => {
 	assert.equal(canDrawLabel("写真.png", false), false);
 	assert.ok(canDrawLabel("写真.png", true));
+});
+
+test("the number is in brackets, so a name that starts with digits is not read as part of it", () => {
+	assert.equal(labelText(5, "1234", true), "[5] 1234");
+	assert.equal(labelText(5, "51234", true), "[5] 51234");
+	assert.equal(labelText(12, "2025.8.23_01", true), "[12] 2025.8.23_01");
+});
+
+test("a name the font cannot draw leaves only the bracketed number", () => {
+	assert.equal(labelText(3, "写真", false), "[3]");
 });

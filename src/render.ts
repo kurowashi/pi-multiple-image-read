@@ -4,7 +4,7 @@
 
 import { type Canvas, createCanvas, type Image, type SKRSContext2D } from "@napi-rs/canvas";
 import { labelFont } from "./font.ts";
-import { canDrawLabel, fitLabel } from "./labels.ts";
+import { canDrawLabel, fitLabel, labelText } from "./labels.ts";
 import { type Layout, MIN_FONT, MIN_TILE, planLayout, type Tile } from "./layout.ts";
 
 /** Pi's inline image limit, in base64 bytes. Above it a PNG is re-encoded as JPEG. */
@@ -92,7 +92,7 @@ function drawLabel(
 	fontFamily: string | null,
 ): LabelState {
 	const drawable = canDrawLabel(item.name, fontFamily !== null);
-	const text = drawable ? `${item.number} ${item.name}` : String(item.number);
+	const text = labelText(item.number, item.name, drawable);
 	const maxWidth = tile.x1 - tile.x0 - LABEL_PAD;
 	const startPx = Math.min(layout.labelPx, Math.max(MIN_FONT, Math.floor(tile.band / LABEL_LINE)));
 	const fitted = fitLabel(text, maxWidth, startPx, (candidate, px) => {

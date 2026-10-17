@@ -61,3 +61,11 @@ export function fitLabel(
 export function canDrawLabel(text: string, hasCjkFamily: boolean): boolean {
 	return hasCjkFamily || Array.from(text).every((char) => char.charCodeAt(0) < 0x80);
 }
+
+/**
+ * The text drawn on a tile. The number is in brackets, because a bare number runs into a name that starts with
+ * digits (`5 1234` reads as `51234`). A name that cannot be drawn leaves only the number.
+ */
+export function labelText(number: number, name: string, drawable: boolean): string {
+	return drawable ? `[${number}] ${name}` : `[${number}]`;
+}
