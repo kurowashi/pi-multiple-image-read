@@ -20,7 +20,7 @@ export default function multipleImageReadExtension(pi: ExtensionAPI): void {
 				paths: Type.Array(Type.String(), {
 					minItems: 1,
 					description:
-						"Files, directories, or glob patterns. Pass a directory or dir/* to cover every image format; *.png skips the others.",
+						'Files, directories, or glob patterns (not regular expressions). For every image in a folder, pass the folder path, e.g. "./screenshots". "*.png" skips other formats.',
 				}),
 				offset: Type.Optional(Type.Integer({ minimum: 0 })),
 			},

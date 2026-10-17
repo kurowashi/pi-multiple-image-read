@@ -96,8 +96,14 @@ test("a glob that matches no file of one type is listed as skipped, and the othe
 	const text = blocks.at(-1);
 	assert.ok(text?.type === "text");
 	assert.match(text.text, /2 image\(s\) on 1 sheet\(s\)/);
-	assert.match(text.text, /skipped: .*\*\.jpg \(no image matches\)/);
-	assert.match(text.text, /skipped: .*\*\.jpeg \(no image matches\)/);
+	assert.match(
+		text.text,
+		/skipped: .*\*\.jpg \(no image matches \(globs are not regular expressions; pass a directory\)\)/,
+	);
+	assert.match(
+		text.text,
+		/skipped: .*\*\.jpeg \(no image matches \(globs are not regular expressions; pass a directory\)\)/,
+	);
 });
 
 test("a TIFF in a directory is listed as skipped, with its reason", async () => {

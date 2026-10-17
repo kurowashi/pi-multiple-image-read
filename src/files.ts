@@ -84,7 +84,7 @@ function expandHome(path: string): string {
 /** An input that yields nothing is listed as skipped, so one empty input does not fail the others. */
 function matchGlob(raw: string, pattern: string): Matched {
 	const files = globSync(pattern).filter(isFile).sort(compareNatural);
-	return orSkip(raw, split(files), "no image matches");
+	return orSkip(raw, split(files), "no image matches (globs are not regular expressions; pass a directory)");
 }
 
 function matchPath(raw: string, path: string): Matched {

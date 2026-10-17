@@ -30,7 +30,7 @@ pi install /path/to/pi-multiple-image-read
 | 項目 | 内容 |
 |---|---|
 | ツール名 | `read_images` |
-| 引数 | `paths`（文字列の配列、1件以上）。ファイル、ディレクトリ、glob を混ぜて指定できる。全形式を拾うにはディレクトリか `dir/*` を使う（`*.png` は PNG だけになる）。`offset`（省略可、既定 0）は先頭から飛ばす枚数 |
+| 引数 | `paths`（文字列の配列、1件以上）。ファイル、ディレクトリ、glob（正規表現ではない）を混ぜて指定できる。全形式を拾うにはディレクトリか `dir/*` を使う（`*.png` は PNG だけになる）。`offset`（省略可、既定 0）は先頭から飛ばす枚数 |
 | 対応形式 | PNG / JPEG / WebP / BMP / GIF（GIF は先頭フレーム）。TIFF は対象外 |
 | 1回の上限 | 48枚。超える分は `offset` で次の呼び出しに回す。返答に「Showing inputs 1-48 of 130. For the rest, call again with offset 48.」と出る
 | 1シートの枚数 | 最大24枚。25枚目以降は次のシートになる |
@@ -82,12 +82,12 @@ pi install /path/to/pi-multiple-image-read
 | 原因 | エラーの例 |
 |---|---|
 | 入力が空 | `no images given` |
-| 全入力が画像を1枚も返さない | `no readable images; skipped: /tmp/none/*.png (no image matches)` |
+| 全入力が画像を1枚も返さない | `no readable images; skipped: /tmp/none/*.png (no image matches (globs are not regular expressions; pass a directory))` |
 | 明示指定の形式が対応外 | `unsupported image type: /tmp/scan.tiff` |
 | offset が範囲外 | `offset 5 is past the last image (1 found)` |
 | 復号できない | 返答に `skipped: /tmp/broken.png (cannot decode: ...)` と出て、残りは返る。全件失敗なら `no readable images: ...` |
 | TIFF（ディレクトリ・glob 内） | 返答に `skipped: /tmp/x/scan.tif (unsupported image type)` |
-| glob が一致しない・存在しない・画像のないディレクトリ | 返答に `skipped: /tmp/none/*.jpg (no image matches)` / `(not found)` / `(no images in directory)` と出て、残りは返る |
+| glob が一致しない・存在しない・画像のないディレクトリ | 返答に `skipped: /tmp/none/*.jpg (no image matches (globs are not regular expressions; pass a directory))` / `(not found)` / `(no images in directory)` と出て、残りは返る |
 
 ## 開発
 

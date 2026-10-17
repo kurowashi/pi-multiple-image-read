@@ -104,13 +104,15 @@ test("a glob with no matches beside a readable input is listed as skipped by its
 	const pattern = join(dir, "*.jpg");
 	const expanded = expandInputs([join(dir, "*.png"), pattern]);
 	assert.deepEqual(expanded.paths, [path]);
-	assert.deepEqual(expanded.skipped, [{ path: pattern, reason: "no image matches" }]);
+	assert.deepEqual(expanded.skipped, [
+		{ path: pattern, reason: "no image matches (globs are not regular expressions; pass a directory)" },
+	]);
 });
 
 test("when no input yields an image, the call fails and names each skipped input", () => {
 	assert.throws(
 		() => expandInputs(["/no/such/dir/*.png"]),
-		/no readable images; skipped: \/no\/such\/dir\/\*\.png \(no image matches\)/,
+		/no readable images; skipped: \/no\/such\/dir\/\*\.png \(no image matches \(globs are not regular expressions; pass a directory\)\)/,
 	);
 });
 
