@@ -9,6 +9,10 @@ read_images(paths: ["/tmp/shots/"])
   → 返答テキストが、ラベルの番号と元のパスの対応を全件示す
 ```
 
+![24枚の画像を1つのシートにまとめた例。各タイルに番号とファイル名のラベルが付く](docs/images/read-images-sheet.png)
+
+上の画像は、24枚の生成画像を `read_images` に渡した実際の出力です（[scripts/make-readme-sheet.ts](scripts/make-readme-sheet.ts) で再生成できます）。
+
 ## インストール
 
 ```bash
