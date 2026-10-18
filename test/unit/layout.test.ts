@@ -8,6 +8,7 @@ import {
 	fits,
 	MAX_EDGE,
 	MAX_PATCHES,
+	MIN_BAND,
 	MIN_TILE,
 	metrics,
 	PATCH,
@@ -207,6 +208,31 @@ test("a wider tile gets a taller label band", () => {
 	const tall = layout.tiles.find((t) => t.index === 1);
 	assert.ok(wide && tall);
 	assert.ok(wide.band > tall.band, `band ${wide.band} should exceed ${tall.band}`);
+});
+
+test("every label band is at least MIN_BAND px, so a MIN_FONT label fits under any tile", () => {
+	const shapes: ReadonlyArray<readonly [number, number]> = [
+		[480, 320],
+		[320, 480],
+		[400, 400],
+		[640, 360],
+		[360, 640],
+		[800, 300],
+		[240, 180],
+		[1024, 768],
+	];
+	const mixed = Array.from({ length: 24 }, (_, i) => at(shapes, (i * 3) % 8));
+	const sets = [
+		{ aspects: Array.from({ length: 24 }, () => 1.5), heights: Array.from({ length: 24 }, () => 320) },
+		{ aspects: mixed.map(([w, h]) => w / h), heights: mixed.map(([, h]) => h) },
+	];
+	for (const { aspects, heights } of sets) {
+		const layout = planLayout(aspects, heights);
+		assert.ok(layout);
+		for (const tile of layout.tiles) {
+			assert.ok(tile.band >= MIN_BAND, `tile ${tile.index} band ${tile.band} is below ${MIN_BAND}`);
+		}
+	}
 });
 
 test("an empty input has no layout", () => {

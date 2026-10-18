@@ -45,6 +45,21 @@ const NAMES = [
 	"朝霧",
 ];
 
+/**
+ * Eight shapes, from a portrait phone screen to a panorama and a thumbnail, so the sheet shows the layout
+ * handling mixed sizes. Each name is paired with a shape by index, scattered so that neighbours differ.
+ */
+const SHAPES: ReadonlyArray<readonly [number, number]> = [
+	[480, 320],
+	[320, 480],
+	[400, 400],
+	[640, 360],
+	[360, 640],
+	[800, 300],
+	[240, 180],
+	[1024, 768],
+];
+
 /** Mulberry32: a small seeded generator, so each illustration is the same on every run. */
 function rng(seed: number): () => number {
 	let state = seed >>> 0;
@@ -58,10 +73,9 @@ function rng(seed: number): () => number {
 }
 
 /** Draws one abstract landscape: a sky gradient, a sun or moon, and layered hills. */
-function draw(seed: number): Buffer {
+function draw(seed: number, w: number, h: number): Buffer {
 	const next = rng(seed);
-	const w = 480;
-	const h = 320;
+	const unit = Math.min(w, h) / 320;
 	const canvas = createCanvas(w, h);
 	const ctx = canvas.getContext("2d");
 
@@ -74,7 +88,7 @@ function draw(seed: number): Buffer {
 
 	ctx.fillStyle = `hsl(${(hue + 180) % 360}, 90%, 85%)`;
 	ctx.beginPath();
-	ctx.arc(w * (0.2 + next() * 0.6), h * (0.2 + next() * 0.25), 22 + next() * 26, 0, Math.PI * 2);
+	ctx.arc(w * (0.2 + next() * 0.6), h * (0.2 + next() * 0.25), (22 + next() * 26) * unit, 0, Math.PI * 2);
 	ctx.fill();
 
 	for (let layer = 0; layer < 4; layer++) {
@@ -82,9 +96,10 @@ function draw(seed: number): Buffer {
 		ctx.fillStyle = `hsl(${(hue + layer * 25) % 360}, ${35 + layer * 12}%, ${38 - layer * 7}%)`;
 		ctx.beginPath();
 		ctx.moveTo(0, h);
-		for (let x = 0; x <= w; x += 24) {
-			const y = base - next() * 70 * (1 - layer * 0.15);
-			ctx.lineTo(x, y);
+		// The last point sits exactly on the right edge, so widths that are not a multiple of the step leave no sliver.
+		for (let x = 0; x < w + 24; x += 24) {
+			const y = base - next() * 70 * unit * (1 - layer * 0.15);
+			ctx.lineTo(Math.min(x, w), y);
 		}
 		ctx.lineTo(w, h);
 		ctx.closePath();
@@ -96,7 +111,8 @@ function draw(seed: number): Buffer {
 const dir = mkdtempSync(join(tmpdir(), "pi-mir-readme-"));
 try {
 	NAMES.forEach((name, i) => {
-		writeFileSync(join(dir, `${name}.png`), draw(i + 1));
+		const [w, h] = SHAPES[(i * 3) % SHAPES.length] ?? [480, 320];
+		writeFileSync(join(dir, `${name}.png`), draw(i + 1, w, h));
 	});
 
 	const blocks = await readImages([dir]);

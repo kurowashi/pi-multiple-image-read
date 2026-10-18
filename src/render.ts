@@ -5,7 +5,7 @@
 import { type Canvas, createCanvas, type Image, type SKRSContext2D } from "@napi-rs/canvas";
 import { labelFont } from "./font.ts";
 import { canDrawLabel, fitLabel, labelText } from "./labels.ts";
-import { type Layout, MIN_FONT, MIN_TILE, planLayout, type Tile } from "./layout.ts";
+import { LABEL_LINE, type Layout, MIN_FONT, MIN_TILE, planLayout, type Tile } from "./layout.ts";
 
 /** Pi's inline image limit, in base64 bytes. Above it a PNG is re-encoded as JPEG. */
 export const INLINE_B64_MAX = 4.5 * 1024 * 1024;
@@ -18,8 +18,6 @@ const BAND_RGB = "rgb(20,20,20)";
 const TEXT_RGB = "rgb(240,240,240)";
 /** Horizontal padding inside a label band. */
 const LABEL_PAD = 8;
-/** Line height as a multiple of the font size. A label fits its band when its font is no taller than band / this. */
-const LABEL_LINE = 1.2;
 
 export interface SheetItem {
 	/** The image's position in the input, drawn in front of the name so the reply can refer to it. */

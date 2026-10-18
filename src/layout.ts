@@ -18,10 +18,17 @@ export const PER_SHEET = 24;
 export const MIN_FONT = 16;
 /** Tiles smaller than this (px, either side) make the reply warn that the images may be hard to read. */
 export const MIN_TILE = 160;
+/** Line height of a label, as a multiple of its font size. */
+export const LABEL_LINE = 1.2;
+/**
+ * Shortest label band in px, so a label at MIN_FONT fits under every tile, however narrow the tile is.
+ * Tiles narrower than the band's share of the width would otherwise have a band too short for their text.
+ */
+export const MIN_BAND = Math.ceil(LABEL_LINE * MIN_FONT);
 
 /**
- * Label band under a tile, as a fraction of the tile's width. A wider tile gets a taller band, so its label
- * fits at the sheet's font size. Measured on the reference set: 0.08 keeps the area ratio lowest among the values tried.
+ * Label band under a tile: BAND_RATIO of the tile's width, plus MIN_BAND px. The width part makes a wider tile's
+ * label fit at the sheet's font size. Measured on the reference set: 0.08 keeps the area ratio lowest among the values tried.
  */
 const BAND_RATIO = 0.08;
 /**
@@ -92,22 +99,24 @@ interface Cell {
 }
 
 /**
- * Width of a subtree is linear in its height: width = alpha * height + beta. A leaf has beta 0. A side-by-side
- * split adds widths and one gutter, so both coefficients add up. A stacked split solves for the shared width,
- * which keeps the relation linear. The gutter enters beta only, so it is the same in px everywhere.
+ * Width of a subtree is linear in its height: width = alpha * height + beta. A leaf's band is BAND_RATIO of its
+ * width plus a constant `band` (in tree units), which keeps the relation linear. A side-by-side split adds widths
+ * and one gutter, so both coefficients add up. A stacked split solves for the shared width. The gutter enters beta
+ * only, so it is the same in px everywhere.
  */
 interface Shape {
 	alpha: number;
 	beta: number;
 }
 
-function shapeOf(tree: Tree, aspects: readonly number[]): Shape {
+function shapeOf(tree: Tree, aspects: readonly number[], band: number): Shape {
 	if (typeof tree === "number") {
 		const a = at(aspects, tree);
-		return { alpha: a / (1 + BAND_RATIO * a), beta: 0 };
+		const alpha = a / (1 + BAND_RATIO * a);
+		return { alpha, beta: -band * alpha };
 	}
-	const l = shapeOf(tree.l, aspects);
-	const r = shapeOf(tree.r, aspects);
+	const l = shapeOf(tree.l, aspects, band);
+	const r = shapeOf(tree.r, aspects, band);
 	if (tree.op === "H") return { alpha: l.alpha + r.alpha, beta: l.beta + r.beta + GUTTER };
 	const alpha = 1 / (1 / l.alpha + 1 / r.alpha);
 	return { alpha, beta: alpha * (-GUTTER + l.beta / l.alpha + r.beta / r.alpha) };
@@ -117,33 +126,42 @@ function shapeOf(tree: Tree, aspects: readonly number[]): Shape {
  * Places every leaf, given the height of a subtree's rectangle (its images and label bands). Its width follows
  * from its shape.
  */
-function place(tree: Tree, aspects: readonly number[], x: number, y: number, h: number, out: Cell[]): void {
+function place(
+	tree: Tree,
+	aspects: readonly number[],
+	x: number,
+	y: number,
+	h: number,
+	band: number,
+	out: Cell[],
+): void {
 	if (typeof tree === "number") {
 		const a = at(aspects, tree);
-		const w = (a / (1 + BAND_RATIO * a)) * h;
-		out[tree] = { x, y, w, h: w / a, band: BAND_RATIO * w };
+		const shape = shapeOf(tree, aspects, band);
+		const w = shape.alpha * h + shape.beta;
+		out[tree] = { x, y, w, h: w / a, band: BAND_RATIO * w + band };
 		return;
 	}
-	const l = shapeOf(tree.l, aspects);
+	const l = shapeOf(tree.l, aspects, band);
 	if (tree.op === "H") {
 		const wl = l.alpha * h + l.beta;
-		place(tree.l, aspects, x, y, h, out);
-		place(tree.r, aspects, x + wl + GUTTER, y, h, out);
+		place(tree.l, aspects, x, y, h, band, out);
+		place(tree.r, aspects, x + wl + GUTTER, y, h, band, out);
 	} else {
-		const node = shapeOf(tree, aspects);
+		const node = shapeOf(tree, aspects, band);
 		const w = node.alpha * h + node.beta;
 		const hl = (w - l.beta) / l.alpha;
-		place(tree.l, aspects, x, y, hl, out);
-		place(tree.r, aspects, x, y + hl + GUTTER, h - hl - GUTTER, out);
+		place(tree.l, aspects, x, y, hl, band, out);
+		place(tree.r, aspects, x, y + hl + GUTTER, h - hl - GUTTER, band, out);
 	}
 }
 
-/** Cells for a tree, in tree units. The root is one unit tall, so its aspect is its width. */
-function cellsOf(tree: Tree, aspects: readonly number[]): { aspect: number; cells: Cell[] } {
-	const shape = shapeOf(tree, aspects);
+/** Cells for a tree, in tree units, with the sheet one unit tall. `band` is the constant part of each band. */
+function cellsOf(tree: Tree, aspects: readonly number[], band: number): { aspect: number; cells: Cell[] } {
+	const shape = shapeOf(tree, aspects, band);
 	const aspect = shape.alpha + shape.beta;
 	const cells: Cell[] = [];
-	place(tree, aspects, 0, 0, 1, cells);
+	place(tree, aspects, 0, 0, 1, band, cells);
 	return { aspect, cells };
 }
 
@@ -191,16 +209,56 @@ function areaSpread(cells: readonly Cell[]): number {
 const SIZE_WEIGHT = 0.5;
 
 /**
+ * A tree placed at its largest scale: the px per tree unit, the cells, and the label band in px. The constant part
+ * of the band is set in px, so it depends on the scale, which depends on the band. A few rounds of fixed-point
+ * iteration settle it.
+ */
+interface Placement {
+	aspect: number;
+	cells: Cell[];
+	scale: number;
+	bandPx: number;
+}
+
+const BAND_ROUNDS = 3;
+
+function placeTree(tree: Tree, aspects: readonly number[], heights: readonly number[]): Placement {
+	let band = 0;
+	let placed: Placement | null = null;
+	for (let round = 0; round < BAND_ROUNDS; round++) {
+		const { aspect, cells } = cellsOf(tree, aspects, band);
+		const scale = Math.min(budgetScale(aspect), sourceScale(cells, heights));
+		placed = { aspect, cells, scale, bandPx: band * scale };
+		band = MIN_BAND / scale;
+	}
+	if (placed === null) throw new Error("no placement round");
+	return placed;
+}
+
+/**
  * Search cost, lower is better: image areas as even as possible, the mean tile as large as possible in px,
- * and the sheet close to square.
+ * and the sheet close to square. A tree whose label bands fall short of MIN_BAND is penalised.
  */
 function cost(tree: Tree, aspects: readonly number[], heights: readonly number[]): number {
-	const { aspect, cells } = cellsOf(tree, aspects);
-	const scale = Math.min(budgetScale(aspect), sourceScale(cells, heights));
+	const { aspect, cells, scale, bandPx } = placeTree(tree, aspects, heights);
+	// A label band wider than a split leaves a leaf with no room. Such a tree has no meaningful cost.
+	if (cells.some((c) => c.w <= 0 || c.h <= 0)) return DEGENERATE_COST;
 	const meanArea = cells.reduce((sum, c) => sum + c.w * c.h, 0) / cells.length;
 	const px = scale * scale * meanArea;
-	return Math.log(areaSpread(cells)) - SIZE_WEIGHT * Math.log(px) + SHAPE_WEIGHT * Math.abs(Math.log(aspect));
+	const shortBand = (BAND_WEIGHT * Math.max(0, MIN_BAND - bandPx)) / MIN_BAND;
+	return (
+		Math.log(areaSpread(cells)) - SIZE_WEIGHT * Math.log(px) + SHAPE_WEIGHT * Math.abs(Math.log(aspect)) + shortBand
+	);
 }
+
+/**
+ * Weight of a label band's shortfall below MIN_BAND, in proportion to the shortfall. The penalty grows smoothly, so the
+ * annealing can move toward a taller band a step at a time. A step penalty (any shortfall costs the same) trapped the
+ * search in tall sheets with uneven tiles. Weight 4 keeps every band at MIN_BAND or more on the reference sets.
+ */
+const BAND_WEIGHT = 4;
+/** Cost of a tree that leaves some tile no room. Finite, so the annealing comparisons stay defined. */
+const DEGENERATE_COST = 1e6;
 
 /** A seeded linear congruential generator, so the same input always gives the same layout. */
 function generator(seed: number): () => number {
@@ -330,8 +388,7 @@ function searchTree(aspects: readonly number[], heights: readonly number[]): Tre
 export function planLayout(aspects: readonly number[], heights: readonly number[]): Layout | null {
 	if (aspects.length === 0) return null;
 	const tree = aspects.length === 1 ? 0 : searchTree(aspects, heights);
-	const { aspect, cells } = cellsOf(tree, aspects);
-	const scale = Math.min(budgetScale(aspect), sourceScale(cells, heights));
+	const { aspect, cells, scale } = placeTree(tree, aspects, heights);
 	const width = Math.round(scale * aspect);
 	const height = Math.round(scale);
 	const tiles: Tile[] = cells.map((cell, index) => {
