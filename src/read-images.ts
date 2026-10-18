@@ -7,7 +7,7 @@ import { type Image, loadImage } from "@napi-rs/canvas";
 import { expandInputs, type Skipped } from "./files.ts";
 import { findCjkFamily } from "./font.ts";
 import { tileLabels } from "./labels.ts";
-import { MIN_TILE, PER_SHEET } from "./layout.ts";
+import { balancedSizes, MIN_TILE, PER_SHEET } from "./layout.ts";
 import {
 	anyTileTooSmall,
 	composeSheet,
@@ -21,7 +21,7 @@ export type ContentBlock =
 	| { type: "image"; data: string; mimeType: "image/png" | "image/jpeg" }
 	| { type: "text"; text: string };
 
-/** Images per call. A call returns at most this many; `offset` reads the next page. */
+/** Most images per call. A call returns at most this many; `offset` reads the next page, which is sized evenly. */
 const PAGE_SIZE = 48;
 
 /** An image on the sheets: its number, the file behind it, and how its label fared. */
@@ -43,7 +43,7 @@ export async function readImages(
 	const expanded = expandInputs(inputs);
 	const total = expanded.paths.length;
 	if (offset >= total) throw new Error(`offset ${offset} is past the last image (${total} found)`);
-	const end = Math.min(offset + PAGE_SIZE, total);
+	const end = offset + (balancedSizes(total - offset, PAGE_SIZE)[0] ?? 0);
 	// Labels come from every input, so a page's labels do not depend on which page it is.
 	const names = tileLabels(expanded.paths);
 	const page = await composePage(expanded.paths.slice(offset, end), offset, names, fontFamily);
@@ -86,14 +86,17 @@ async function composePage(
 ): Promise<Page> {
 	const nameCount = countNames(names);
 	const page: Page = { sheets: [], placed: [], unreadable: [] };
-	for (let start = 0; start < paths.length; start += PER_SHEET) {
-		const chunk = paths.slice(start, start + PER_SHEET);
+	let start = 0;
+	for (const size of balancedSizes(paths.length, PER_SHEET)) {
+		const begin = start;
+		const chunk = paths.slice(begin, begin + size);
+		start += size;
 		// Decoded images are held for one sheet at a time, so memory stays bounded by PER_SHEET.
 		const decoded = await Promise.all(chunk.map((path) => decodeOrReason(path)));
 		const items: SheetItem[] = [];
 		const members: number[] = [];
 		decoded.forEach((result, i) => {
-			const index = offset + start + i;
+			const index = offset + begin + i;
 			if (result.ok) {
 				items.push({ number: index + 1, name: nameAt(names, index), image: result.image });
 				members.push(index);

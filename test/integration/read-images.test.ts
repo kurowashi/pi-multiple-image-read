@@ -19,6 +19,7 @@ test("twenty-five images give two sheets, and the text lists every image by its 
 	assert.equal(text.text.match(/^ {2}\d+\. /gm)?.length, 25);
 	assert.match(text.text, /^ {2}1\. .*shot_01\.png$/m);
 	assert.match(text.text, /^ {2}25\. .*shot_25\.png$/m);
+	assert.match(text.text, /25 image\(s\) on 2 sheet\(s\)/);
 });
 
 test("a sheet with a single image has its number on the label, and the text names the file", async () => {
@@ -149,13 +150,27 @@ test("more than one page: the first page names the next offset, and the last pag
 	const first = await readImages([dir]);
 	const firstText = first.at(-1);
 	assert.ok(firstText?.type === "text");
-	assert.match(firstText.text, /Showing inputs 1-48 of 50\. For the rest, call again with offset 48\./);
+	assert.match(firstText.text, /Showing inputs 1-25 of 50\. For the rest, call again with offset 25\./);
 
-	const second = await readImages([dir], { offset: 48 });
+	const second = await readImages([dir], { offset: 25 });
 	const secondText = second.at(-1);
 	assert.ok(secondText?.type === "text");
-	assert.match(secondText.text, /Showing inputs 49-50 of 50\./);
+	assert.match(secondText.text, /Showing inputs 26-50 of 50\./);
 	assert.doesNotMatch(secondText.text, /call again/);
+});
+
+test("49 images never leave a single image alone on a page or sheet", async () => {
+	const dir = fixtureDir("e2e-49");
+	for (let i = 1; i <= 49; i++) writeSolidPng(dir, `q${String(i).padStart(2, "0")}.png`, 400, 300, i);
+	const first = await readImages([dir]);
+	const firstText = first.at(-1);
+	assert.ok(firstText?.type === "text");
+	assert.match(firstText.text, /Showing inputs 1-25 of 49\. For the rest, call again with offset 25\./);
+	assert.match(firstText.text, /25 image\(s\) on 2 sheet\(s\)/);
+	const second = await readImages([dir], { offset: 25 });
+	const secondText = second.at(-1);
+	assert.ok(secondText?.type === "text");
+	assert.match(secondText.text, /24 image\(s\) on 1 sheet\(s\)/);
 });
 
 test("a shared label is the same on every page, because labels are decided over all inputs", async () => {

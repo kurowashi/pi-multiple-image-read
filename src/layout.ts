@@ -14,6 +14,18 @@ export const MAX_PATCHES = 4784;
 export const PATCH = 28;
 /** Images per sheet. More images go to more sheets, not to smaller tiles. */
 export const PER_SHEET = 24;
+
+/**
+ * Splits `count` images into the fewest parts of at most `cap`, as equal as possible, largest first. A remainder
+ * of one or two would otherwise leave a lone image on its own sheet, with a far larger tile than the rest.
+ */
+export function balancedSizes(count: number, cap: number): number[] {
+	if (count <= 0) return [];
+	const parts = Math.ceil(count / cap);
+	const base = Math.floor(count / parts);
+	const extra = count % parts;
+	return Array.from({ length: parts }, (_, i) => (i < extra ? base + 1 : base));
+}
 /** Smallest label font in px. Below this, labels are truncated rather than shrunk further. */
 export const MIN_FONT = 16;
 /** Tiles smaller than this (px, either side) make the reply warn that the images may be hard to read. */

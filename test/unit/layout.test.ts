@@ -5,6 +5,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+	balancedSizes,
 	fits,
 	LABEL_LINE,
 	labelBand,
@@ -37,6 +38,32 @@ function areaRatio(tiles: readonly Tile[]): number {
 
 /** Aspect ratios (width / height) of the seven reference images in the sample set. */
 const REFERENCE_ASPECTS = [1.5, 1.5, 0.565, 0.433, 0.75, 0.563, 0.684];
+
+test("balancedSizes splits a count into the fewest parts under the cap, as equal as possible", () => {
+	assert.deepEqual(balancedSizes(1, 24), [1]);
+	assert.deepEqual(balancedSizes(24, 24), [24]);
+	assert.deepEqual(balancedSizes(25, 24), [13, 12]);
+	assert.deepEqual(balancedSizes(49, 24), [17, 16, 16]);
+	assert.deepEqual(balancedSizes(49, 48), [25, 24]);
+	assert.deepEqual(balancedSizes(0, 24), []);
+	for (let n = 1; n <= 200; n++) {
+		const parts = balancedSizes(n, 24);
+		assert.equal(
+			parts.reduce((a, b) => a + b, 0),
+			n,
+			`sum for ${n}`,
+		);
+		assert.ok(
+			parts.every((p) => p >= 1 && p <= 24),
+			`cap for ${n}`,
+		);
+		assert.ok(Math.max(...parts) - Math.min(...parts) <= 1, `balance for ${n}`);
+		assert.ok(
+			parts.every((p, i) => i === 0 || (parts[i - 1] ?? 0) >= p),
+			`largest first for ${n}`,
+		);
+	}
+});
 
 test("fits enforces both the long-edge cap and the patch cap", () => {
 	const longest = Math.floor(MAX_EDGE / PATCH) * PATCH;
