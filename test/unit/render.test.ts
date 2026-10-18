@@ -63,8 +63,8 @@ test("a sheet built from noisy images stays under the inline limit", async () =>
 test("every tile reports its size and that its label was drawn", async () => {
 	const dir = fixtureDir("render-tiles");
 	const items = [
-		{ number: 1, name: "wide", image: await load(writeSolidPng(dir, "wide.png", 800, 200, 40)) },
-		{ number: 2, name: "tall", image: await load(writeSolidPng(dir, "tall.png", 200, 800, 120)) },
+		{ number: 1, name: "wide", image: await load(writeSolidPng(dir, "wide.png", 800, 400, 40)) },
+		{ number: 2, name: "tall", image: await load(writeSolidPng(dir, "tall.png", 400, 800, 120)) },
 	];
 	const sheet = composeSheet(items, null);
 	assert.equal(sheet.tiles.length, 2);

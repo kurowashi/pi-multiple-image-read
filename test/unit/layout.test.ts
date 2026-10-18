@@ -6,9 +6,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
 	fits,
+	LABEL_LINE,
+	labelBand,
 	MAX_EDGE,
 	MAX_PATCHES,
-	MIN_BAND,
 	MIN_TILE,
 	metrics,
 	PATCH,
@@ -201,16 +202,14 @@ test("label font scales with the sheet width, and never drops below the minimum"
 	assert.equal(small.labelPx, 16, "the minimum label font applies at small widths");
 });
 
-test("a wider tile gets a taller label band", () => {
-	const layout = planLayout([3, 0.4], [600, 600]);
+test("every tile on a sheet has the same label band height", () => {
+	const layout = planLayout([3, 0.4, 1], [600, 600, 600]);
 	assert.ok(layout);
-	const wide = layout.tiles.find((t) => t.index === 0);
-	const tall = layout.tiles.find((t) => t.index === 1);
-	assert.ok(wide && tall);
-	assert.ok(wide.band > tall.band, `band ${wide.band} should exceed ${tall.band}`);
+	const bands = new Set(layout.tiles.map((t) => t.band));
+	assert.equal(bands.size, 1, `bands ${[...bands].join(", ")} should all match`);
 });
 
-test("every label band is at least MIN_BAND px, so a MIN_FONT label fits under any tile", () => {
+test("the label band fits the sheet's label font, so no label spills out of its band", () => {
 	const shapes: ReadonlyArray<readonly [number, number]> = [
 		[480, 320],
 		[320, 480],
@@ -229,9 +228,12 @@ test("every label band is at least MIN_BAND px, so a MIN_FONT label fits under a
 	for (const { aspects, heights } of sets) {
 		const layout = planLayout(aspects, heights);
 		assert.ok(layout);
+		assert.ok(layout.tiles[0]);
+		const need = labelBand(layout.width);
 		for (const tile of layout.tiles) {
-			assert.ok(tile.band >= MIN_BAND, `tile ${tile.index} band ${tile.band} is below ${MIN_BAND}`);
+			assert.ok(tile.band >= need, `tile ${tile.index} band ${tile.band} is below ${need}`);
 		}
+		assert.ok(layout.labelPx * LABEL_LINE <= need, "the band holds one line of the sheet's label font");
 	}
 });
 

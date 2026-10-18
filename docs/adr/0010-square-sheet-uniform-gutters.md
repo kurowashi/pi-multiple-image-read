@@ -2,7 +2,7 @@
 
 ## 状態
 
-有効。[ADR 0008](0008-numbered-labels-slice-layout.md) の配置の探索に、形の項と枠の規則を加えます。ADR 0008 の面積の規則は変えません。
+有効。[ADR 0008](0008-numbered-labels-slice-layout.md) の配置の探索に、形の項と枠の規則を加えます。ADR 0008 の面積の規則は変えません。帯の規則は [ADR 0012](0012-uniform-label-band-and-more-search.md) で置き換えました。
 
 ## 状況
 

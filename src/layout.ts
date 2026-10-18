@@ -21,17 +21,6 @@ export const MIN_TILE = 160;
 /** Line height of a label, as a multiple of its font size. */
 export const LABEL_LINE = 1.2;
 /**
- * Shortest label band in px, so a label at MIN_FONT fits under every tile, however narrow the tile is.
- * Tiles narrower than the band's share of the width would otherwise have a band too short for their text.
- */
-export const MIN_BAND = Math.ceil(LABEL_LINE * MIN_FONT);
-
-/**
- * Label band under a tile: BAND_RATIO of the tile's width, plus MIN_BAND px. The width part makes a wider tile's
- * label fit at the sheet's font size. Measured on the reference set: 0.08 keeps the area ratio lowest among the values tried.
- */
-const BAND_RATIO = 0.08;
-/**
  * Gap between neighbouring tiles, as a fraction of the sheet's height. Every split uses this same value, so every
  * frame on a sheet is the same width in px. A split's gap is measured in the sheet's own units, not the split's.
  */
@@ -99,10 +88,18 @@ interface Cell {
 }
 
 /**
- * Width of a subtree is linear in its height: width = alpha * height + beta. A leaf's band is BAND_RATIO of its
- * width plus a constant `band` (in tree units), which keeps the relation linear. A side-by-side split adds widths
- * and one gutter, so both coefficients add up. A stacked split solves for the shared width. The gutter enters beta
- * only, so it is the same in px everywhere.
+ * Label band height in px for a sheet of this width: one line of the sheet's label font. Every tile on a sheet uses
+ * this height, so the bands are the same on every tile and no label spills out of its band.
+ */
+export function labelBand(width: number): number {
+	return Math.ceil(LABEL_LINE * metrics(width).labelPx);
+}
+
+/**
+ * Width of a subtree is linear in its height: width = alpha * height + beta. A leaf's band is a constant `band`
+ * (in tree units), which keeps the relation linear. A side-by-side split adds widths and one gutter, so both
+ * coefficients add up. A stacked split solves for the shared width. The gutter enters beta only, so it is the same
+ * in px everywhere.
  */
 interface Shape {
 	alpha: number;
@@ -112,8 +109,7 @@ interface Shape {
 function shapeOf(tree: Tree, aspects: readonly number[], band: number): Shape {
 	if (typeof tree === "number") {
 		const a = at(aspects, tree);
-		const alpha = a / (1 + BAND_RATIO * a);
-		return { alpha, beta: -band * alpha };
+		return { alpha: a, beta: -band * a };
 	}
 	const l = shapeOf(tree.l, aspects, band);
 	const r = shapeOf(tree.r, aspects, band);
@@ -139,7 +135,7 @@ function place(
 		const a = at(aspects, tree);
 		const shape = shapeOf(tree, aspects, band);
 		const w = shape.alpha * h + shape.beta;
-		out[tree] = { x, y, w, h: w / a, band: BAND_RATIO * w + band };
+		out[tree] = { x, y, w, h: w / a, band };
 		return;
 	}
 	const l = shapeOf(tree.l, aspects, band);
@@ -208,19 +204,18 @@ function areaSpread(cells: readonly Cell[]): number {
  */
 const SIZE_WEIGHT = 0.5;
 
-/**
- * A tree placed at its largest scale: the px per tree unit, the cells, and the label band in px. The constant part
- * of the band is set in px, so it depends on the scale, which depends on the band. A few rounds of fixed-point
- * iteration settle it.
- */
+/** A tree placed at its largest scale: the px per tree unit, the cells, and the aspect of the whole sheet. */
 interface Placement {
 	aspect: number;
 	cells: Cell[];
 	scale: number;
-	bandPx: number;
 }
 
-const BAND_ROUNDS = 3;
+/**
+ * The band is a constant in tree units, but its px height is set by the sheet's width, which depends on the band.
+ * The band only grows across rounds, so the search settles on a band that holds one label line.
+ */
+const BAND_ROUNDS = 20;
 
 function placeTree(tree: Tree, aspects: readonly number[], heights: readonly number[]): Placement {
 	let band = 0;
@@ -228,8 +223,10 @@ function placeTree(tree: Tree, aspects: readonly number[], heights: readonly num
 	for (let round = 0; round < BAND_ROUNDS; round++) {
 		const { aspect, cells } = cellsOf(tree, aspects, band);
 		const scale = Math.min(budgetScale(aspect), sourceScale(cells, heights));
-		placed = { aspect, cells, scale, bandPx: band * scale };
-		band = MIN_BAND / scale;
+		placed = { aspect, cells, scale };
+		const need = labelBand(Math.round(scale * aspect));
+		if (band * scale >= need) break;
+		band = need / scale;
 	}
 	if (placed === null) throw new Error("no placement round");
 	return placed;
@@ -237,26 +234,17 @@ function placeTree(tree: Tree, aspects: readonly number[], heights: readonly num
 
 /**
  * Search cost, lower is better: image areas as even as possible, the mean tile as large as possible in px,
- * and the sheet close to square. A tree whose label bands fall short of MIN_BAND is penalised.
+ * and the sheet close to square.
  */
 function cost(tree: Tree, aspects: readonly number[], heights: readonly number[]): number {
-	const { aspect, cells, scale, bandPx } = placeTree(tree, aspects, heights);
+	const { aspect, cells, scale } = placeTree(tree, aspects, heights);
 	// A label band wider than a split leaves a leaf with no room. Such a tree has no meaningful cost.
 	if (cells.some((c) => c.w <= 0 || c.h <= 0)) return DEGENERATE_COST;
 	const meanArea = cells.reduce((sum, c) => sum + c.w * c.h, 0) / cells.length;
 	const px = scale * scale * meanArea;
-	const shortBand = (BAND_WEIGHT * Math.max(0, MIN_BAND - bandPx)) / MIN_BAND;
-	return (
-		Math.log(areaSpread(cells)) - SIZE_WEIGHT * Math.log(px) + SHAPE_WEIGHT * Math.abs(Math.log(aspect)) + shortBand
-	);
+	return Math.log(areaSpread(cells)) - SIZE_WEIGHT * Math.log(px) + SHAPE_WEIGHT * Math.abs(Math.log(aspect));
 }
 
-/**
- * Weight of a label band's shortfall below MIN_BAND, in proportion to the shortfall. The penalty grows smoothly, so the
- * annealing can move toward a taller band a step at a time. A step penalty (any shortfall costs the same) trapped the
- * search in tall sheets with uneven tiles. Weight 4 keeps every band at MIN_BAND or more on the reference sets.
- */
-const BAND_WEIGHT = 4;
 /** Cost of a tree that leaves some tile no room. Finite, so the annealing comparisons stay defined. */
 const DEGENERATE_COST = 1e6;
 
@@ -327,7 +315,7 @@ function randomTree(indexes: readonly number[], rand: () => number): Tree {
 	return at(pieces, 0);
 }
 
-const SEARCH_RESTARTS = 6;
+const SEARCH_RESTARTS = 12;
 const SEARCH_STEPS = 40_000;
 
 /** A neighbour of a tree: move one leaf elsewhere (most of the time), or flip one split. Null if none applies. */
@@ -396,8 +384,7 @@ export function planLayout(aspects: readonly number[], heights: readonly number[
 		const y0 = Math.round(cell.y * scale);
 		const x1 = Math.round((cell.x + cell.w) * scale);
 		const y1 = Math.round((cell.y + cell.h) * scale);
-		const bandBottom = Math.round((cell.y + cell.h + cell.band) * scale);
-		return { index, x0, y0, x1, y1, band: bandBottom - y1 };
+		return { index, x0, y0, x1, y1, band: Math.round(cell.band * scale) };
 	});
 	return { width, height, labelPx: metrics(width).labelPx, tiles };
 }

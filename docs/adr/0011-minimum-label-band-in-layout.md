@@ -2,7 +2,7 @@
 
 ## 状態
 
-有効。[ADR 0010](0010-square-sheet-uniform-gutters.md) の帯の規則（幅の比例だけ）を置き換えます。面積の規則と枠の規則は変えません。
+廃止。[ADR 0012](0012-uniform-label-band-and-more-search.md) で、帯を全タイル一律の高さにし、罰則を使わない方式に置き換えました。
 
 ## 状況
 
