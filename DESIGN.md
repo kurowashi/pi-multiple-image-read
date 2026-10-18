@@ -19,6 +19,7 @@ Pi の `read` は1回に1枚しか扱えず、画像ごとに画像トークン�
 | ラベルと画像の対応が分かる | ラベルに入力順の番号を描き、返答テキストが全画像の番号とパスを並べる(`test/integration/read-images.test.ts`) |
 | 切り詰めた・描けなかった・同名のラベルが分かる | `label cut off` / `label not drawn` / `label shared with another file` の注記が番号付きで出る(同上) |
 | 同じ大きさの画像が、シート上で同じくらいの大きさに見える | 実例7枚の面積比が 2.1 以下(`test/unit/layout.test.ts`)
+| 枠の幅が揃い、シートが正方形に近い | 隣り合う枠の幅が1px以内に揃い、同じ形の24枚のシートの縦横比が 0.8〜1.25(`test/unit/layout.test.ts`)。[ADR 0010](docs/adr/0010-square-sheet-uniform-gutters.md) |
 | 小さすぎるタイルに注意を促す | 160 px 未満のタイルがあると注記が出る(同上) |
 | 1シートが Pi の画像上限に収まる | PNG が上限内ならそのまま、超えたら JPEG を品質を下げて上限内にする(`test/unit/render.test.ts`) |
 | 読めないファイルは残りを返し、理由付きで列挙する | 復号に失敗したファイルは載せず、返答に `skipped: <path> (<reason>)` が出る。全件失敗なら理由付きでエラー(同上) |

@@ -143,6 +143,44 @@ test("tile areas are close to equal for the reference aspect ratios", () => {
 	assert.ok(areaRatio(layout.tiles) <= 2.1, `area ratio ${areaRatio(layout.tiles).toFixed(2)} is above 2.1`);
 });
 
+/** Gaps between each tile and its nearest neighbour to the right and below, measured over the label band. */
+function neighbourGaps(tiles: readonly Tile[]): number[] {
+	const gaps: number[] = [];
+	for (const a of tiles) {
+		const right = tiles
+			.filter((b) => b !== a && b.x0 >= a.x1 && b.y0 < a.y1 + a.band && a.y0 < b.y1 + b.band)
+			.reduce<Tile | null>((best, b) => (best === null || b.x0 < best.x0 ? b : best), null);
+		if (right) gaps.push(right.x0 - a.x1);
+		const below = tiles
+			.filter((b) => b !== a && b.y0 >= a.y1 + a.band && b.x0 < a.x1 && a.x0 < b.x1)
+			.reduce<Tile | null>((best, b) => (best === null || b.y0 < best.y0 ? b : best), null);
+		if (below) gaps.push(below.y0 - (a.y1 + a.band));
+	}
+	return gaps;
+}
+
+test("every frame between tiles has the same width, horizontal or vertical", () => {
+	const layout = planLayout(
+		REFERENCE_ASPECTS,
+		REFERENCE_ASPECTS.map(() => 1000),
+	);
+	assert.ok(layout);
+	const gaps = neighbourGaps(layout.tiles);
+	assert.ok(gaps.length > 0);
+	const spread = Math.max(...gaps) - Math.min(...gaps);
+	assert.ok(spread <= 1, `gaps range from ${Math.min(...gaps)} to ${Math.max(...gaps)} px`);
+});
+
+test("a sheet of same-shape images is close to square, so it uses the patch budget", () => {
+	const layout = planLayout(
+		Array.from({ length: PER_SHEET }, () => 1.5),
+		Array.from({ length: PER_SHEET }, () => 320),
+	);
+	assert.ok(layout);
+	const aspect = layout.width / layout.height;
+	assert.ok(aspect >= 0.8 && aspect <= 1.25, `sheet is ${layout.width}x${layout.height}, aspect ${aspect.toFixed(2)}`);
+});
+
 test("the same input gives the same layout every time", () => {
 	const first = planLayout(
 		REFERENCE_ASPECTS,

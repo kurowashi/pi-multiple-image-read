@@ -24,8 +24,18 @@ export const MIN_TILE = 160;
  * fits at the sheet's font size. Measured on the reference set: 0.08 keeps the area ratio lowest among the values tried.
  */
 const BAND_RATIO = 0.08;
-/** Gap between neighbouring tiles, as a fraction of the size of the split they sit in. */
-const GAP_RATIO = 0.008;
+/**
+ * Gap between neighbouring tiles, as a fraction of the sheet's height. Every split uses this same value, so every
+ * frame on a sheet is the same width in px. A split's gap is measured in the sheet's own units, not the split's.
+ */
+const GUTTER = 0.008;
+/**
+ * Weight of the sheet's shape against the area evenness. A sheet that is far from square uses fewer patches
+ * than the budget allows, so its tiles and labels come out smaller for the same tokens. Measured on random
+ * sets: weight 1 keeps the area spread within about 7% of weight 0, and brings the sheet to about 1:1 when
+ * the images share one shape ([ADR 0010](../docs/adr/0010-square-sheet-uniform-gutters.md)).
+ */
+const SHAPE_WEIGHT = 1;
 
 /** Position and size of one tile. Pixel coordinates; x1 and y1 are exclusive. */
 export interface Tile {
@@ -81,42 +91,59 @@ interface Cell {
 	band: number;
 }
 
-/** Aspect (width / height) of a subtree. A leaf's band is part of its aspect, so the leaf is image plus band. */
-function aspectOf(tree: Tree, aspects: readonly number[]): number {
-	if (typeof tree === "number") {
-		const a = at(aspects, tree);
-		return a / (1 + BAND_RATIO * a);
-	}
-	const l = aspectOf(tree.l, aspects);
-	const r = aspectOf(tree.r, aspects);
-	return tree.op === "H" ? l + r + GAP_RATIO : 1 / (1 / l + 1 / r + GAP_RATIO);
+/**
+ * Width of a subtree is linear in its height: width = alpha * height + beta. A leaf has beta 0. A side-by-side
+ * split adds widths and one gutter, so both coefficients add up. A stacked split solves for the shared width,
+ * which keeps the relation linear. The gutter enters beta only, so it is the same in px everywhere.
+ */
+interface Shape {
+	alpha: number;
+	beta: number;
 }
 
-/** Places every leaf, given the rectangle of a subtree. The rectangle's aspect must be the subtree's own. */
-function place(tree: Tree, aspects: readonly number[], x: number, y: number, w: number, h: number, out: Cell[]): void {
+function shapeOf(tree: Tree, aspects: readonly number[]): Shape {
 	if (typeof tree === "number") {
 		const a = at(aspects, tree);
-		const imageH = w / a;
-		out[tree] = { x, y, w, h: imageH, band: BAND_RATIO * w };
+		return { alpha: a / (1 + BAND_RATIO * a), beta: 0 };
+	}
+	const l = shapeOf(tree.l, aspects);
+	const r = shapeOf(tree.r, aspects);
+	if (tree.op === "H") return { alpha: l.alpha + r.alpha, beta: l.beta + r.beta + GUTTER };
+	const alpha = 1 / (1 / l.alpha + 1 / r.alpha);
+	return { alpha, beta: alpha * (-GUTTER + l.beta / l.alpha + r.beta / r.alpha) };
+}
+
+/**
+ * Places every leaf, given the height of a subtree's rectangle (its images and label bands). Its width follows
+ * from its shape.
+ */
+function place(tree: Tree, aspects: readonly number[], x: number, y: number, h: number, out: Cell[]): void {
+	if (typeof tree === "number") {
+		const a = at(aspects, tree);
+		const w = (a / (1 + BAND_RATIO * a)) * h;
+		out[tree] = { x, y, w, h: w / a, band: BAND_RATIO * w };
 		return;
 	}
-	const l = aspectOf(tree.l, aspects);
+	const l = shapeOf(tree.l, aspects);
 	if (tree.op === "H") {
-		const lw = l * h;
-		place(tree.l, aspects, x, y, lw, h, out);
-		place(tree.r, aspects, x + lw + GAP_RATIO * h, y, w - lw - GAP_RATIO * h, h, out);
+		const wl = l.alpha * h + l.beta;
+		place(tree.l, aspects, x, y, h, out);
+		place(tree.r, aspects, x + wl + GUTTER, y, h, out);
 	} else {
-		const lh = w / l;
-		place(tree.l, aspects, x, y, w, lh, out);
-		place(tree.r, aspects, x, y + lh + GAP_RATIO * w, w, h - lh - GAP_RATIO * w, out);
+		const node = shapeOf(tree, aspects);
+		const w = node.alpha * h + node.beta;
+		const hl = (w - l.beta) / l.alpha;
+		place(tree.l, aspects, x, y, hl, out);
+		place(tree.r, aspects, x, y + hl + GUTTER, h - hl - GUTTER, out);
 	}
 }
 
-/** Cells for a tree, in tree units. The root rectangle is aspectOf(tree) wide and one unit tall. */
+/** Cells for a tree, in tree units. The root is one unit tall, so its aspect is its width. */
 function cellsOf(tree: Tree, aspects: readonly number[]): { aspect: number; cells: Cell[] } {
-	const aspect = aspectOf(tree, aspects);
+	const shape = shapeOf(tree, aspects);
+	const aspect = shape.alpha + shape.beta;
 	const cells: Cell[] = [];
-	place(tree, aspects, 0, 0, aspect, 1, cells);
+	place(tree, aspects, 0, 0, 1, cells);
 	return { aspect, cells };
 }
 
@@ -163,13 +190,16 @@ function areaSpread(cells: readonly Cell[]): number {
  */
 const SIZE_WEIGHT = 0.5;
 
-/** Search cost, lower is better: image areas as even as possible, and the mean tile as large as possible in px. */
+/**
+ * Search cost, lower is better: image areas as even as possible, the mean tile as large as possible in px,
+ * and the sheet close to square.
+ */
 function cost(tree: Tree, aspects: readonly number[], heights: readonly number[]): number {
 	const { aspect, cells } = cellsOf(tree, aspects);
 	const scale = Math.min(budgetScale(aspect), sourceScale(cells, heights));
 	const meanArea = cells.reduce((sum, c) => sum + c.w * c.h, 0) / cells.length;
 	const px = scale * scale * meanArea;
-	return Math.log(areaSpread(cells)) - SIZE_WEIGHT * Math.log(px);
+	return Math.log(areaSpread(cells)) - SIZE_WEIGHT * Math.log(px) + SHAPE_WEIGHT * Math.abs(Math.log(aspect));
 }
 
 /** A seeded linear congruential generator, so the same input always gives the same layout. */
